@@ -84,15 +84,20 @@ def load_claude_instructions() -> str:
    - ✅ "✅ Editei proposta Escola Eleva: expandi apresentação com 3 novos parágrafos. PDF gerado."
    - ❌ Long explanations with many bullet points and sections
 
-3. **Telegram Markdown** - Use ONLY these formats:
+3. **ALWAYS include PDF path** when you generate a PDF:
+   - The tool returns the path - ALWAYS mention it in your response
+   - ✅ "PDF gerado: docs/2025-12-client/proposta.pdf"
+   - ❌ "PDF gerado com sucesso" (missing path)
+
+4. **Telegram Markdown** - Use ONLY these formats:
    - Bold: *texto em negrito*
    - Italic: _texto em itálico_
    - Code: `código`
    - Do NOT use ## headers, ### subheaders, or ** for bold
 
-4. **Maximum 3-4 lines** unless specifically asked for details
+5. **Maximum 3-4 lines** unless specifically asked for details
 
-5. **No emojis in excess** - max 2-3 per message
+6. **No emojis in excess** - max 2-3 per message
 """
 
     return base_instructions + bot_instructions
@@ -207,12 +212,19 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
 
             # Extract PDF path from output
             # The script outputs: "✓ Generated: path/to/file.pdf"
+            pdf_path = None
             for line in result.stdout.split("\n"):
                 if "Generated:" in line or "✓" in line:
                     pdf_path = line.split(":")[-1].strip()
-                    return pdf_path
+                    break
 
-            return "PDF generated successfully"
+            # If no path found in output, construct it from yaml path
+            if not pdf_path:
+                # Convert docs/2025-12-client/proposta.yml to docs/2025-12-client/proposta.pdf
+                pdf_path = yaml_file_path.replace('.yml', '.pdf')
+
+            logger.info(f"PDF path: {pdf_path}")
+            return f"PDF gerado com sucesso: {pdf_path}"
         else:
             return f"Error generating PDF: {result.stderr}"
 

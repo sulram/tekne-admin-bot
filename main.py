@@ -254,10 +254,20 @@ async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
     import re
     from pathlib import Path
 
-    # Try to find PDF path in response
-    pdf_match = re.search(r'docs/[^\s]+\.pdf', agent_response)
+    # Try to find PDF path in response (multiple patterns)
+    pdf_match = re.search(r'docs/[^\s)]+\.pdf', agent_response)
+
+    if not pdf_match:
+        # Try finding any .pdf reference
+        pdf_match = re.search(r'[^\s:]+\.pdf', agent_response)
+
     if pdf_match:
-        pdf_path = Path("submodules/tekne-proposals") / pdf_match.group(0)
+        pdf_relative_path = pdf_match.group(0)
+        # Remove any trailing punctuation
+        pdf_relative_path = pdf_relative_path.rstrip('.,;:)')
+
+        pdf_path = Path("submodules/tekne-proposals") / pdf_relative_path
+
         if pdf_path.exists():
             logger.info(f"Sending PDF: {pdf_path}")
             try:
@@ -270,6 +280,10 @@ async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
             except Exception as e:
                 logger.error(f"Error sending PDF: {str(e)}")
                 await update.message.reply_text(f"❌ Erro ao enviar PDF: {str(e)}")
+        else:
+            logger.warning(f"PDF path found in response but file doesn't exist: {pdf_path}")
+    else:
+        logger.info("No PDF path found in agent response")
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

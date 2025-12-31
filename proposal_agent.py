@@ -71,6 +71,28 @@ def load_claude_instructions() -> str:
 
 **DO NOT skip the commit step!** All proposals must be versioned in git.
 **DO NOT commit PDF files** - only YAML and images.
+
+## RESPONSE STYLE (Telegram Bot)
+
+**CRITICAL: Keep responses SHORT and CONCISE to save tokens:**
+
+1. **Use past tense** when describing completed actions:
+   - ✅ "Editei a proposta e gerei o PDF"
+   - ❌ "Vou editar a proposta"
+
+2. **Be direct and brief**:
+   - ✅ "✅ Editei proposta Escola Eleva: expandi apresentação com 3 novos parágrafos. PDF gerado."
+   - ❌ Long explanations with many bullet points and sections
+
+3. **Telegram Markdown** - Use ONLY these formats:
+   - Bold: *texto em negrito*
+   - Italic: _texto em itálico_
+   - Code: `código`
+   - Do NOT use ## headers, ### subheaders, or ** for bold
+
+4. **Maximum 3-4 lines** unless specifically asked for details
+
+5. **No emojis in excess** - max 2-3 per message
 """
 
     return base_instructions + bot_instructions
@@ -382,7 +404,7 @@ proposal_agent = Agent(
         load_proposal_yaml,
     ],
     add_history_to_context=True,
-    markdown=True,
+    markdown=False,  # Disable markdown - Telegram uses different format
 )
 
 

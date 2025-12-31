@@ -141,14 +141,22 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = update.effective_user.id
 
     try:
+        # Log audio reception
+        audio_type = "voice" if update.message.voice else "audio"
+        logger.info(f"User {user_id} sent {audio_type} message")
+
         # Send initial status message
         status_msg = await update.message.reply_text("🎧 Transcrevendo áudio...")
 
         # Get the audio file (works for both voice messages and audio files)
         if update.message.voice:
             audio_file = await update.message.voice.get_file()
+            duration = update.message.voice.duration
+            logger.info(f"Voice duration: {duration}s")
         elif update.message.audio:
             audio_file = await update.message.audio.get_file()
+            duration = update.message.audio.duration if update.message.audio.duration else "unknown"
+            logger.info(f"Audio duration: {duration}s")
         else:
             await status_msg.edit_text("❌ Nenhum áudio encontrado")
             return
@@ -156,14 +164,20 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Download the audio file
         file_path = f"/tmp/{audio_file.file_id}.ogg"
         await audio_file.download_to_drive(file_path)
+        logger.info(f"Audio downloaded to: {file_path}")
 
         # Transcribe with OpenAI Whisper
+        logger.info("Starting Whisper transcription...")
         with open(file_path, "rb") as audio:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio,
                 response_format="text"
             )
+
+        # Log transcription result
+        logger.info(f"✅ Transcription complete ({len(transcription)} chars):")
+        logger.info(f"   \"{transcription}\"")
 
         # Clean up the temporary file
         os.remove(file_path)
@@ -176,13 +190,20 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             try:
                 response = get_agent_response(transcription, session_id=session_id)
                 await status_msg.edit_text(response)
+
+                # Check for PDF in response
+                if "PDF gerado" in response or ".pdf" in response:
+                    await send_pdf_if_exists(update, response)
+
             except Exception as e:
+                logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
                 await status_msg.edit_text(f"❌ Erro: {str(e)}")
         else:
             # No active session - just show transcription
             await status_msg.edit_text(f"📝 Transcrição:\n\n{transcription}")
 
     except Exception as e:
+        logger.error(f"Error transcribing audio: {str(e)}", exc_info=True)
         await update.message.reply_text(f"❌ Erro ao transcrever: {str(e)}")
 
 

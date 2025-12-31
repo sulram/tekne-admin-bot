@@ -1,10 +1,12 @@
 import os
 import logging
+import time
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
-from proposal_agent import get_agent_response
+from proposal_agent import get_agent_response, set_status_callback
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,6 +26,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Store user sessions for proposal generation
 user_sessions = {}
+
+# Queue for status messages from agent tools
+status_messages_queue = {}
 
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,10 +139,23 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         status_msg = await update.message.reply_text("💭 Processando...")
 
+        # Setup status callback for this user
+        status_messages_queue[user_id] = []
+
+        def status_callback(message: str):
+            """Callback to queue status messages"""
+            status_messages_queue[user_id].append(message)
+
+        set_status_callback(status_callback)
+
         try:
             logger.info(f"Sending to agent (session {session_id}): {user_text[:50]}...")
             response = get_agent_response(user_text, session_id=session_id)
             logger.info(f"Agent response length: {len(response)} chars")
+
+            # Send any queued status messages
+            for status_msg_text in status_messages_queue.get(user_id, []):
+                await update.message.reply_text(status_msg_text)
 
             # Send response (handles long messages)
             await send_long_message(update, response, status_msg)
@@ -152,6 +170,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await status_msg.edit_text(f"❌ Erro: {str(e)}")
             else:
                 await update.message.reply_text(f"❌ Erro: {str(e)}")
+        finally:
+            # Clear status callback and queue
+            set_status_callback(None)
+            if user_id in status_messages_queue:
+                del status_messages_queue[user_id]
     else:
         # No active session - suggest starting one
         await update.message.reply_text(
@@ -215,6 +238,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Transcribe with OpenAI Whisper
         logger.info("Starting Whisper transcription...")
+        start_time = time.time()
+
         with open(file_path, "rb") as audio:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -222,7 +247,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 response_format="text"
             )
 
+        elapsed_time = time.time() - start_time
+
         # Log transcription result
+        logger.info(f"⏱️  Whisper API response time: {elapsed_time:.2f} seconds")
         logger.info(f"✅ Transcription complete ({len(transcription)} chars):")
         logger.info(f"   \"{transcription}\"")
 
@@ -234,8 +262,21 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             session_id = user_sessions[user_id]["session_id"]
             await status_msg.edit_text(f"📝 Transcrição:\n{transcription}\n\n💭 Processando...")
 
+            # Setup status callback for this user
+            status_messages_queue[user_id] = []
+
+            def status_callback(message: str):
+                """Callback to queue status messages"""
+                status_messages_queue[user_id].append(message)
+
+            set_status_callback(status_callback)
+
             try:
                 response = get_agent_response(transcription, session_id=session_id)
+
+                # Send any queued status messages
+                for status_msg_text in status_messages_queue.get(user_id, []):
+                    await update.message.reply_text(status_msg_text)
 
                 # Send response (handles long messages)
                 await send_long_message(update, response, status_msg)
@@ -247,6 +288,11 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             except Exception as e:
                 logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
                 await status_msg.edit_text(f"❌ Erro: {str(e)}")
+            finally:
+                # Clear status callback and queue
+                set_status_callback(None)
+                if user_id in status_messages_queue:
+                    del status_messages_queue[user_id]
         else:
             # No active session - just show transcription
             await status_msg.edit_text(f"📝 Transcrição:\n\n{transcription}")

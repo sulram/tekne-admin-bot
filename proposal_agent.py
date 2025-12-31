@@ -7,9 +7,10 @@ import os
 import yaml
 import subprocess
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 from agno.agent import Agent
 from agno.models.anthropic import Claude
 from agno.db.sqlite import SqliteDb
@@ -24,6 +25,19 @@ SUBMODULE_PATH = Path(__file__).parent / "submodules" / "tekne-proposals"
 DOCS_PATH = SUBMODULE_PATH / "docs"
 CLAUDE_MD_PATH = SUBMODULE_PATH / "CLAUDE.md"
 
+# Global callback for sending status messages to user
+_status_callback: Optional[Callable[[str], None]] = None
+
+def set_status_callback(callback: Callable[[str], None]) -> None:
+    """Set callback function to send status updates to user"""
+    global _status_callback
+    _status_callback = callback
+
+def send_status(message: str) -> None:
+    """Send status message to user if callback is set"""
+    if _status_callback:
+        _status_callback(message)
+
 
 def load_claude_instructions() -> str:
     """Load CLAUDE.md as agent instructions"""
@@ -37,22 +51,44 @@ def load_claude_instructions() -> str:
 @tool
 def save_proposal_yaml(
     yaml_content: str,
-    client_name: str,
-    project_slug: str,
-    date: Optional[str] = None
+    client_name: str = "",
+    project_slug: str = "",
+    date: Optional[str] = None,
+    existing_file_path: Optional[str] = None
 ) -> str:
     """
     Save proposal YAML to submodules/tekne-proposals/docs/
 
+    To EDIT an existing proposal, provide existing_file_path parameter.
+    To CREATE a new proposal, provide client_name and project_slug.
+
     Args:
         yaml_content: The complete YAML content
-        client_name: Client name for folder (will be slugified)
-        project_slug: Project name for filename (will be slugified)
+        client_name: Client name for folder (will be slugified) - required for new proposals
+        project_slug: Project name for filename (will be slugified) - required for new proposals
         date: Optional date in YYYY-MM-DD format (defaults to today)
+        existing_file_path: Path to existing file to update (e.g., "docs/2025-12-sesc/proposta-metaverso.yml")
 
     Returns:
-        Path to the created file
+        Path to the saved file
     """
+    # If editing existing file, use that path
+    if existing_file_path:
+        file_path = SUBMODULE_PATH / existing_file_path
+
+        if not file_path.exists():
+            return f"Error: File not found: {existing_file_path}"
+
+        file_path.write_text(yaml_content, encoding="utf-8")
+        relative_path = str(file_path.relative_to(SUBMODULE_PATH))
+        logger.info(f"✅ Updated proposal YAML: {relative_path}")
+        send_status("📝 Atualizei o arquivo da proposta!")
+        return relative_path
+
+    # Creating new proposal
+    if not client_name or not project_slug:
+        return "Error: client_name and project_slug are required for new proposals"
+
     # Parse date
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -76,7 +112,8 @@ def save_proposal_yaml(
     file_path.write_text(yaml_content, encoding="utf-8")
 
     relative_path = str(file_path.relative_to(SUBMODULE_PATH))
-    logger.info(f"✅ Saved proposal YAML: {relative_path}")
+    logger.info(f"✅ Created proposal YAML: {relative_path}")
+    send_status("📝 Criei o arquivo da proposta!")
 
     return relative_path
 
@@ -97,8 +134,13 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
     if not yaml_full_path.exists():
         return f"Error: YAML file not found: {yaml_file_path}"
 
+    # Send status to user
+    send_status("🔨 Gerando o PDF da proposta...")
+
     # Run ./proposal script
     try:
+        start_time = time.time()
+
         result = subprocess.run(
             ["./proposal", str(yaml_file_path)],
             cwd=SUBMODULE_PATH,
@@ -107,7 +149,12 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
             timeout=30
         )
 
+        elapsed_time = time.time() - start_time
+        logger.info(f"⏱️  PDF generation took {elapsed_time:.2f} seconds")
+
         if result.returncode == 0:
+            send_status(f"✅ PDF gerado em {elapsed_time:.1f}s!")
+
             # Extract PDF path from output
             # The script outputs: "✓ Generated: path/to/file.pdf"
             for line in result.stdout.split("\n"):
@@ -280,7 +327,7 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 # Create the agent
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
-    model=Claude(id="claude-sonnet-4-5"),
+    model=Claude(id="claude-haiku-4-5"),  # Using Haiku for cost efficiency
     db=SqliteDb(db_file="proposals.db"),
     instructions=load_claude_instructions(),
     tools=[
@@ -308,7 +355,13 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
         Agent response text
     """
     logger.info(f"[Session {session_id}] User message: {message[:100]}...")
+
+    # Time the API call
+    start_time = time.time()
     response = proposal_agent.run(message, session_id=session_id, stream=False)
+    elapsed_time = time.time() - start_time
+
+    logger.info(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
     logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")
 
     # Log if tools were used

@@ -222,7 +222,6 @@ proposal_agent = Agent(
     ],
     add_history_to_context=True,
     markdown=True,
-    show_tool_calls=True,
 )
 
 

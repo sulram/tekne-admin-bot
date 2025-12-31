@@ -185,8 +185,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             if progress_task and not progress_task.done():
                 logger.info("Cancelling progress task due to status callback")
                 progress_task.cancel()
-            # Create async task to send message immediately
-            asyncio.create_task(update.message.reply_text(message))
+            # Create async task to send message immediately - use call_soon_threadsafe
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(update.message.reply_text(message))
+            )
 
         set_status_callback(status_callback)
 
@@ -324,23 +326,30 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Check if user has active proposal session
         if user_id in user_sessions and user_sessions[user_id].get("active"):
             session_id = user_sessions[user_id]["session_id"]
-            await status_msg.edit_text(f"📝 Transcrição:\n{transcription}\n\n💭 Processando...")
+            # Show transcription in separate message to preserve it
+            await status_msg.edit_text(f"📝 Transcrição:\n{transcription}")
+
+            # Create new status message for processing
+            processing_msg = await update.message.reply_text("💭 Processando...")
             progress_task = None
 
             # Setup status callback for this user - send messages immediately
+            loop = asyncio.get_event_loop()
             def status_callback(message: str):
                 """Callback to send status messages in real-time"""
                 nonlocal progress_task
                 # Cancel progress when status message arrives
                 if progress_task and not progress_task.done():
                     progress_task.cancel()
-                # Create async task to send message immediately
-                asyncio.create_task(update.message.reply_text(message))
+                # Create async task to send message immediately - use call_soon_threadsafe
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(update.message.reply_text(message))
+                )
 
             set_status_callback(status_callback)
 
             # Start progress indicator task
-            progress_task = asyncio.create_task(show_progress(status_msg))
+            progress_task = asyncio.create_task(show_progress(processing_msg))
 
             try:
                 # Run agent in thread pool to avoid blocking event loop
@@ -360,7 +369,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
                 # Delete the progress message before sending final response
                 try:
-                    await status_msg.delete()
+                    await processing_msg.delete()
                 except Exception:
                     pass
 
@@ -376,7 +385,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 if progress_task and not progress_task.done():
                     progress_task.cancel()
                 try:
-                    await status_msg.edit_text(f"❌ Erro: {str(e)}")
+                    await processing_msg.edit_text(f"❌ Erro: {str(e)}")
                 except Exception:
                     await update.message.reply_text(f"❌ Erro: {str(e)}")
             finally:

@@ -315,7 +315,7 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     if hasattr(response, 'messages'):
         for msg in response.messages:
             if hasattr(msg, 'role') and msg.role == 'assistant':
-                if hasattr(msg, 'content'):
+                if hasattr(msg, 'content') and msg.content is not None:
                     for block in msg.content:
                         if hasattr(block, 'type') and block.type == 'tool_use':
                             logger.info(f"[Session {session_id}] Tool used: {block.name}")

@@ -180,8 +180,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
             nonlocal progress_task
+            logger.info(f"Status callback received: {message}")
             # Cancel progress when status message arrives
             if progress_task and not progress_task.done():
+                logger.info("Cancelling progress task due to status callback")
                 progress_task.cancel()
             # Create async task to send message immediately
             asyncio.create_task(update.message.reply_text(message))
@@ -189,6 +191,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         set_status_callback(status_callback)
 
         # Start progress indicator task
+        logger.info("Starting progress indicator")
         progress_task = asyncio.create_task(show_progress(status_msg))
 
         try:

@@ -248,14 +248,15 @@ def generate_image_dalle(
 
 
 @tool
-def commit_and_push_submodule(message: str, files: List[str]) -> str:
+def commit_and_push_submodule(message: str, files: Optional[List[str]] = None) -> str:
     """
     Commit and push changes to the tekne-proposals submodule
 
     Args:
         message: Commit message (e.g., "Add proposal for Client - Project")
         files: List of file paths to commit (e.g., ["docs/2025-12-client/proposta-project.yml"])
-               REQUIRED - must be a list of strings, cannot be empty or None
+               REQUIRED - must be a list of strings with at least one file path
+               Example: ["docs/2025-12-sesc/proposta-metaverso.yml"]
 
     Returns:
         Result of git operations
@@ -267,8 +268,11 @@ def commit_and_push_submodule(message: str, files: List[str]) -> str:
         )
     """
     # Validate files parameter
-    if not files or not isinstance(files, list):
-        return f"Error: 'files' parameter must be a non-empty list of file paths. Received: {files}"
+    if not files:
+        return "Error: 'files' parameter is required and must contain at least one file path. Example: files=['docs/2025-12-client/proposta.yml']"
+
+    if not isinstance(files, list):
+        return f"Error: 'files' must be a list of strings. Received: {type(files).__name__}"
 
     try:
         # Change to submodule directory

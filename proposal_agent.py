@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional, Callable
 from agno.agent import Agent
 from agno.models.anthropic import Claude
-from agno.db.sqlite import SqliteDb
+from agno.db.memory import InMemoryDb
 from agno.tools import tool
 
 # Configure logging
@@ -328,7 +328,7 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
     model=Claude(id="claude-haiku-4-5"),  # Using Haiku for cost efficiency
-    db=SqliteDb(db_file="proposals.db"),
+    db=InMemoryDb(),  # In-memory storage - YAML files are the source of truth
     instructions=load_claude_instructions(),
     tools=[
         save_proposal_yaml,

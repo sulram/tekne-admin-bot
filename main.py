@@ -82,6 +82,45 @@ async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("✅ Sessão resetada! Use /proposal para começar uma nova proposta.")
 
 
+async def show_progress(status_msg) -> None:
+    """Show animated progress indicator while agent is processing"""
+    spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    messages = [
+        "💭 Processando",
+        "🤔 Analisando sua solicitação",
+        "📝 Preparando resposta",
+        "🧠 Pensando",
+        "⚙️ Trabalhando nisso",
+    ]
+
+    spinner_idx = 0
+    message_idx = 0
+    elapsed = 0
+
+    try:
+        while True:
+            # Update message every 3 seconds, spinner every 0.3s
+            if elapsed % 10 == 0:  # Every 3 seconds
+                current_message = messages[message_idx % len(messages)]
+                message_idx += 1
+
+            spinner = spinners[spinner_idx % len(spinners)]
+
+            try:
+                await status_msg.edit_text(f"{spinner} {current_message}...")
+            except Exception:
+                # Ignore errors if message hasn't changed or rate limited
+                pass
+
+            await asyncio.sleep(0.3)
+            spinner_idx += 1
+            elapsed += 1
+
+    except asyncio.CancelledError:
+        # Task was cancelled, processing is done
+        pass
+
+
 async def send_long_message(update: Update, message: str, status_msg=None) -> None:
     """Send long messages by splitting them into chunks"""
     MAX_LENGTH = 4096
@@ -144,10 +183,20 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         set_status_callback(status_callback)
 
+        # Start progress indicator task
+        progress_task = asyncio.create_task(show_progress(status_msg))
+
         try:
             logger.info(f"Sending to agent (session {session_id}): {user_text[:50]}...")
             response = get_agent_response(user_text, session_id=session_id)
             logger.info(f"Agent response length: {len(response)} chars")
+
+            # Cancel progress indicator
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
 
             # Give status messages time to be sent
             await asyncio.sleep(0.5)
@@ -263,8 +312,18 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             set_status_callback(status_callback)
 
+            # Start progress indicator task
+            progress_task = asyncio.create_task(show_progress(status_msg))
+
             try:
                 response = get_agent_response(transcription, session_id=session_id)
+
+                # Cancel progress indicator
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
 
                 # Give status messages time to be sent
                 await asyncio.sleep(0.5)

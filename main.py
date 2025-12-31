@@ -16,6 +16,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress httpx INFO logs to avoid flooding
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -77,6 +80,47 @@ async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("✅ Sessão resetada! Use /proposal para começar uma nova proposta.")
 
 
+async def send_long_message(update: Update, message: str, status_msg=None) -> None:
+    """Send long messages by splitting them into chunks"""
+    MAX_LENGTH = 4096
+
+    if len(message) <= MAX_LENGTH:
+        if status_msg:
+            await status_msg.edit_text(message)
+        else:
+            await update.message.reply_text(message)
+        return
+
+    # Delete status message if exists
+    if status_msg:
+        await status_msg.delete()
+
+    # Split message into chunks
+    chunks = []
+    while message:
+        if len(message) <= MAX_LENGTH:
+            chunks.append(message)
+            break
+
+        # Find a good break point (newline, period, or space)
+        split_at = MAX_LENGTH
+        for sep in ['\n\n', '\n', '. ', ' ']:
+            pos = message[:MAX_LENGTH].rfind(sep)
+            if pos > MAX_LENGTH * 0.7:  # Don't split too early
+                split_at = pos + len(sep)
+                break
+
+        chunks.append(message[:split_at])
+        message = message[split_at:]
+
+    # Send chunks
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(f"(continuação {i+1}):\n\n{chunk}")
+
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages - route to proposal agent if session is active"""
     user_id = update.effective_user.id
@@ -95,8 +139,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             response = get_agent_response(user_text, session_id=session_id)
             logger.info(f"Agent response length: {len(response)} chars")
 
-            # Check if response mentions PDF generation and send file if exists
-            await status_msg.edit_text(response)
+            # Send response (handles long messages)
+            await send_long_message(update, response, status_msg)
 
             # Check for PDF file mentioned in response
             if "PDF gerado" in response or ".pdf" in response:
@@ -104,7 +148,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         except Exception as e:
             logger.error(f"Error processing message for user {user_id}: {str(e)}", exc_info=True)
-            await status_msg.edit_text(f"❌ Erro: {str(e)}")
+            if status_msg:
+                await status_msg.edit_text(f"❌ Erro: {str(e)}")
+            else:
+                await update.message.reply_text(f"❌ Erro: {str(e)}")
     else:
         # No active session - suggest starting one
         await update.message.reply_text(
@@ -189,7 +236,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             try:
                 response = get_agent_response(transcription, session_id=session_id)
-                await status_msg.edit_text(response)
+
+                # Send response (handles long messages)
+                await send_long_message(update, response, status_msg)
 
                 # Check for PDF in response
                 if "PDF gerado" in response or ".pdf" in response:

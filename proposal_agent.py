@@ -41,11 +41,38 @@ def send_status(message: str) -> None:
 
 def load_claude_instructions() -> str:
     """Load CLAUDE.md as agent instructions"""
+    base_instructions = ""
+
     if CLAUDE_MD_PATH.exists():
-        instructions = CLAUDE_MD_PATH.read_text()
-        logger.info(f"Loaded CLAUDE.md instructions ({len(instructions)} chars)")
-        return instructions
-    return "Generate proposals in YAML format for Tekne Studio."
+        base_instructions = CLAUDE_MD_PATH.read_text()
+        logger.info(f"Loaded CLAUDE.md instructions ({len(base_instructions)} chars)")
+    else:
+        base_instructions = "Generate proposals in YAML format for Tekne Studio."
+
+    # Add bot-specific instructions
+    bot_instructions = """
+
+---
+
+## WORKFLOW INSTRUCTIONS (Telegram Bot)
+
+**IMPORTANT: You MUST follow this workflow after saving/generating proposals:**
+
+1. After calling `save_proposal_yaml` or editing a YAML file:
+   - The file is saved to the git repository
+
+2. After calling `generate_pdf_from_yaml`:
+   - The PDF is generated in the same directory
+
+3. **ALWAYS commit and push changes** using `commit_and_push_submodule`:
+   - Include all modified files (YAML, PDF, images)
+   - Use descriptive commit message (e.g., "Add proposal for [Client] - [Project]")
+   - Example: `commit_and_push_submodule("Add SESC proposal - Youth and Climate Change", ["docs/2025-12-sesc/proposta-metaverso.yml", "docs/2025-12-sesc/proposta-metaverso.pdf"])`
+
+**DO NOT skip the commit step!** All proposals must be versioned in git.
+"""
+
+    return base_instructions + bot_instructions
 
 
 @tool

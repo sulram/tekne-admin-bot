@@ -174,10 +174,15 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session_id = user_sessions[user_id]["session_id"]
 
         status_msg = await update.message.reply_text("💭 Processando...")
+        progress_task = None
 
         # Setup status callback for this user - send messages immediately
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
+            nonlocal progress_task
+            # Cancel progress when status message arrives
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
             # Create async task to send message immediately
             asyncio.create_task(update.message.reply_text(message))
 
@@ -192,17 +197,24 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.info(f"Agent response length: {len(response)} chars")
 
             # Cancel progress indicator
-            progress_task.cancel()
-            try:
-                await progress_task
-            except asyncio.CancelledError:
-                pass
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
 
             # Give status messages time to be sent
             await asyncio.sleep(0.5)
 
+            # Delete the progress message before sending final response
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+
             # Send response (handles long messages)
-            await send_long_message(update, response, status_msg)
+            await send_long_message(update, response, status_msg=None)
 
             # Check for PDF file mentioned in response
             if "PDF gerado" in response or ".pdf" in response:
@@ -210,8 +222,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         except Exception as e:
             logger.error(f"Error processing message for user {user_id}: {str(e)}", exc_info=True)
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
             if status_msg:
-                await status_msg.edit_text(f"❌ Erro: {str(e)}")
+                try:
+                    await status_msg.edit_text(f"❌ Erro: {str(e)}")
+                except Exception:
+                    await update.message.reply_text(f"❌ Erro: {str(e)}")
             else:
                 await update.message.reply_text(f"❌ Erro: {str(e)}")
         finally:
@@ -303,10 +320,15 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if user_id in user_sessions and user_sessions[user_id].get("active"):
             session_id = user_sessions[user_id]["session_id"]
             await status_msg.edit_text(f"📝 Transcrição:\n{transcription}\n\n💭 Processando...")
+            progress_task = None
 
             # Setup status callback for this user - send messages immediately
             def status_callback(message: str):
                 """Callback to send status messages in real-time"""
+                nonlocal progress_task
+                # Cancel progress when status message arrives
+                if progress_task and not progress_task.done():
+                    progress_task.cancel()
                 # Create async task to send message immediately
                 asyncio.create_task(update.message.reply_text(message))
 
@@ -319,17 +341,24 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 response = get_agent_response(transcription, session_id=session_id)
 
                 # Cancel progress indicator
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except asyncio.CancelledError:
-                    pass
+                if progress_task and not progress_task.done():
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
 
                 # Give status messages time to be sent
                 await asyncio.sleep(0.5)
 
+                # Delete the progress message before sending final response
+                try:
+                    await status_msg.delete()
+                except Exception:
+                    pass
+
                 # Send response (handles long messages)
-                await send_long_message(update, response, status_msg)
+                await send_long_message(update, response, status_msg=None)
 
                 # Check for PDF in response
                 if "PDF gerado" in response or ".pdf" in response:
@@ -337,7 +366,12 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             except Exception as e:
                 logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
-                await status_msg.edit_text(f"❌ Erro: {str(e)}")
+                if progress_task and not progress_task.done():
+                    progress_task.cancel()
+                try:
+                    await status_msg.edit_text(f"❌ Erro: {str(e)}")
+                except Exception:
+                    await update.message.reply_text(f"❌ Erro: {str(e)}")
             finally:
                 # Clear status callback
                 set_status_callback(None)

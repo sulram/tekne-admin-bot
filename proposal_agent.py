@@ -10,10 +10,10 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from agno.agent import Agent
 from agno.models.anthropic import Claude
-from agno.db.memory import InMemoryDb
+from agno.db.in_memory import InMemoryDb
 from agno.tools import tool
 
 # Configure logging
@@ -65,11 +65,12 @@ def load_claude_instructions() -> str:
    - The PDF is generated in the same directory
 
 3. **ALWAYS commit and push changes** using `commit_and_push_submodule`:
-   - Include all modified files (YAML, PDF, images)
+   - Include YAML files and images (DO NOT include PDF files)
    - Use descriptive commit message (e.g., "Add proposal for [Client] - [Project]")
-   - Example: `commit_and_push_submodule("Add SESC proposal - Youth and Climate Change", ["docs/2025-12-sesc/proposta-metaverso.yml", "docs/2025-12-sesc/proposta-metaverso.pdf"])`
+   - Example: `commit_and_push_submodule("Add SESC proposal - Youth and Climate Change", ["docs/2025-12-sesc/proposta-metaverso.yml"])`
 
 **DO NOT skip the commit step!** All proposals must be versioned in git.
+**DO NOT commit PDF files** - only YAML and images.
 """
 
     return base_instructions + bot_instructions
@@ -247,17 +248,28 @@ def generate_image_dalle(
 
 
 @tool
-def commit_and_push_submodule(message: str, files: list[str]) -> str:
+def commit_and_push_submodule(message: str, files: List[str]) -> str:
     """
     Commit and push changes to the tekne-proposals submodule
 
     Args:
-        message: Commit message
-        files: List of file paths to add (relative to submodule root)
+        message: Commit message (e.g., "Add proposal for Client - Project")
+        files: List of file paths to commit (e.g., ["docs/2025-12-client/proposta-project.yml"])
+               REQUIRED - must be a list of strings, cannot be empty or None
 
     Returns:
         Result of git operations
+
+    Example:
+        commit_and_push_submodule(
+            message="Add SESC proposal",
+            files=["docs/2025-12-sesc/proposta-metaverso.yml"]
+        )
     """
+    # Validate files parameter
+    if not files or not isinstance(files, list):
+        return f"Error: 'files' parameter must be a non-empty list of file paths. Received: {files}"
+
     try:
         # Change to submodule directory
         os.chdir(SUBMODULE_PATH)

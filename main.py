@@ -196,7 +196,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         try:
             logger.info(f"Sending to agent (session {session_id}): {user_text[:50]}...")
-            response = get_agent_response(user_text, session_id=session_id)
+            # Run agent in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, get_agent_response, user_text, session_id)
             logger.info(f"Agent response length: {len(response)} chars")
 
             # Cancel progress indicator
@@ -341,7 +343,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             progress_task = asyncio.create_task(show_progress(status_msg))
 
             try:
-                response = get_agent_response(transcription, session_id=session_id)
+                # Run agent in thread pool to avoid blocking event loop
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, get_agent_response, transcription, session_id)
 
                 # Cancel progress indicator
                 if progress_task and not progress_task.done():

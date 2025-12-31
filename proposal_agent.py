@@ -6,6 +6,7 @@ Uses Agno with Claude to create commercial proposals following CLAUDE.md rules
 import os
 import yaml
 import subprocess
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,9 @@ from agno.models.anthropic import Claude
 from agno.db.sqlite import SqliteDb
 from agno.tools import tool
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Path to submodule
 SUBMODULE_PATH = Path(__file__).parent / "submodules" / "tekne-proposals"
@@ -24,7 +28,9 @@ CLAUDE_MD_PATH = SUBMODULE_PATH / "CLAUDE.md"
 def load_claude_instructions() -> str:
     """Load CLAUDE.md as agent instructions"""
     if CLAUDE_MD_PATH.exists():
-        return CLAUDE_MD_PATH.read_text()
+        instructions = CLAUDE_MD_PATH.read_text()
+        logger.info(f"Loaded CLAUDE.md instructions ({len(instructions)} chars)")
+        return instructions
     return "Generate proposals in YAML format for Tekne Studio."
 
 
@@ -69,7 +75,10 @@ def save_proposal_yaml(
     # Save YAML
     file_path.write_text(yaml_content, encoding="utf-8")
 
-    return str(file_path.relative_to(SUBMODULE_PATH))
+    relative_path = str(file_path.relative_to(SUBMODULE_PATH))
+    logger.info(f"✅ Saved proposal YAML: {relative_path}")
+
+    return relative_path
 
 
 @tool
@@ -208,6 +217,66 @@ def commit_and_push_submodule(message: str, files: list[str]) -> str:
         return f"Error: {str(e)}"
 
 
+@tool
+def list_existing_proposals() -> str:
+    """
+    List all existing proposals in docs/ directory
+
+    Returns:
+        Formatted list of proposals with their paths
+    """
+    if not DOCS_PATH.exists():
+        return "No proposals found. docs/ directory doesn't exist."
+
+    proposals = []
+    for project_dir in sorted(DOCS_PATH.iterdir()):
+        if project_dir.is_dir():
+            # Find YAML files in directory
+            yaml_files = list(project_dir.glob("*.yml"))
+            for yaml_file in yaml_files:
+                try:
+                    # Read YAML to get title/client
+                    with open(yaml_file, 'r', encoding='utf-8') as f:
+                        data = yaml.safe_load(f)
+                        meta = data.get('meta', {})
+                        title = meta.get('title', 'Sem título')
+                        client = meta.get('client', 'Sem cliente')
+                        date = meta.get('date', 'Sem data')
+
+                        proposals.append(f"📄 {project_dir.name}/{yaml_file.name}\n   Cliente: {client}\n   Título: {title}\n   Data: {date}")
+                except Exception as e:
+                    proposals.append(f"❌ {project_dir.name}/{yaml_file.name} (erro ao ler)")
+
+    if not proposals:
+        return "Nenhuma proposta encontrada em docs/"
+
+    return "Propostas existentes:\n\n" + "\n\n".join(proposals)
+
+
+@tool
+def load_proposal_yaml(yaml_file_path: str) -> str:
+    """
+    Load existing proposal YAML for editing
+
+    Args:
+        yaml_file_path: Relative path to YAML file from submodule root
+
+    Returns:
+        YAML content as string
+    """
+    yaml_full_path = SUBMODULE_PATH / yaml_file_path
+
+    if not yaml_full_path.exists():
+        return f"Error: Proposal not found: {yaml_file_path}"
+
+    try:
+        content = yaml_full_path.read_text(encoding='utf-8')
+        logger.info(f"Loaded proposal: {yaml_file_path}")
+        return f"Conteúdo do arquivo {yaml_file_path}:\n\n```yaml\n{content}\n```"
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+
 # Create the agent
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
@@ -219,6 +288,8 @@ proposal_agent = Agent(
         generate_pdf_from_yaml,
         generate_image_dalle,
         commit_and_push_submodule,
+        list_existing_proposals,
+        load_proposal_yaml,
     ],
     add_history_to_context=True,
     markdown=True,
@@ -236,5 +307,17 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     Returns:
         Agent response text
     """
+    logger.info(f"[Session {session_id}] User message: {message[:100]}...")
     response = proposal_agent.run(message, session_id=session_id, stream=False)
+    logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")
+
+    # Log if tools were used
+    if hasattr(response, 'messages'):
+        for msg in response.messages:
+            if hasattr(msg, 'role') and msg.role == 'assistant':
+                if hasattr(msg, 'content'):
+                    for block in msg.content:
+                        if hasattr(block, 'type') and block.type == 'tool_use':
+                            logger.info(f"[Session {session_id}] Tool used: {block.name}")
+
     return response.content

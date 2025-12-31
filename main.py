@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -7,6 +8,13 @@ from proposal_agent import get_agent_response
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -39,6 +47,8 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     session_id = f"user_{user_id}"
 
+    logger.info(f"User {user_id} ({update.effective_user.username}) started new proposal")
+
     # Reset session
     user_sessions[user_id] = {"session_id": session_id, "active": True}
 
@@ -48,9 +58,12 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     status_msg = await update.message.reply_text("🚀 Iniciando gerador de propostas...")
 
     try:
+        logger.info(f"Sending to agent: {initial_message}")
         response = get_agent_response(initial_message, session_id=session_id)
+        logger.info(f"Agent response length: {len(response)} chars")
         await status_msg.edit_text(response)
     except Exception as e:
+        logger.error(f"Error starting agent for user {user_id}: {str(e)}", exc_info=True)
         await status_msg.edit_text(f"❌ Erro ao iniciar agente: {str(e)}")
 
 
@@ -69,6 +82,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     user_text = update.message.text
 
+    logger.info(f"User {user_id} sent text: {user_text[:100]}...")
+
     # Check if user has an active proposal session
     if user_id in user_sessions and user_sessions[user_id].get("active"):
         session_id = user_sessions[user_id]["session_id"]
@@ -76,9 +91,19 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         status_msg = await update.message.reply_text("💭 Processando...")
 
         try:
+            logger.info(f"Sending to agent (session {session_id}): {user_text[:50]}...")
             response = get_agent_response(user_text, session_id=session_id)
+            logger.info(f"Agent response length: {len(response)} chars")
+
+            # Check if response mentions PDF generation and send file if exists
             await status_msg.edit_text(response)
+
+            # Check for PDF file mentioned in response
+            if "PDF gerado" in response or ".pdf" in response:
+                await send_pdf_if_exists(update, response)
+
         except Exception as e:
+            logger.error(f"Error processing message for user {user_id}: {str(e)}", exc_info=True)
             await status_msg.edit_text(f"❌ Erro: {str(e)}")
     else:
         # No active session - suggest starting one
@@ -86,6 +111,29 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "💡 Para criar uma proposta, use /proposal\n"
             "Para ajuda, use /help"
         )
+
+
+async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
+    """Extract PDF path from agent response and send if exists"""
+    import re
+    from pathlib import Path
+
+    # Try to find PDF path in response
+    pdf_match = re.search(r'docs/[^\s]+\.pdf', agent_response)
+    if pdf_match:
+        pdf_path = Path("submodules/tekne-proposals") / pdf_match.group(0)
+        if pdf_path.exists():
+            logger.info(f"Sending PDF: {pdf_path}")
+            try:
+                with open(pdf_path, 'rb') as pdf_file:
+                    await update.message.reply_document(
+                        document=pdf_file,
+                        filename=pdf_path.name,
+                        caption="📄 Proposta gerada!"
+                    )
+            except Exception as e:
+                logger.error(f"Error sending PDF: {str(e)}")
+                await update.message.reply_text(f"❌ Erro ao enviar PDF: {str(e)}")
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

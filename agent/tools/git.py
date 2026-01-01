@@ -82,10 +82,10 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Push
+        # Push (set upstream automatically if needed)
         logger.info("Pushing to remote...")
         result = subprocess.run(
-            ["git", "push"],
+            ["git", "push", "--set-upstream", "origin", "main"],
             check=True,
             capture_output=True,
             text=True

@@ -93,6 +93,23 @@ if __name__ == "__main__":
         )
         if typst_version.returncode == 0:
             logger.info(f"✅ Typst installed: {typst_version.stdout.strip()}")
+
+            # Check available fonts
+            typst_fonts = subprocess.run(
+                ["typst", "fonts"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if typst_fonts.returncode == 0:
+                # Check if Space Grotesk is available
+                if "Space Grotesk" in typst_fonts.stdout:
+                    logger.info("✅ Space Grotesk font found")
+                else:
+                    logger.warning("⚠️  Space Grotesk font NOT found - PDFs will use fallback fonts")
+                    logger.info("Available fonts (first 10 lines):")
+                    for line in typst_fonts.stdout.split('\n')[:10]:
+                        logger.info(f"  {line}")
         else:
             logger.warning("⚠️  Typst check failed - PDF generation will not work")
     except FileNotFoundError:

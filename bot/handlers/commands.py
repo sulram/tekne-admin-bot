@@ -218,20 +218,23 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                     message += f"{number}. {folder}\n"
 
-                    # Store path for callback lookup
-                    proposal_paths.append(f"docs/{path}")
-                    idx = len(proposal_paths) - 1
+                    # Generate unique short ID from path (hash last 8 chars)
+                    import hashlib
+                    full_path = f"docs/{path}"
+                    path_hash = hashlib.md5(full_path.encode()).hexdigest()[:8]
 
-                    # Add button with short index (fits in 64 bytes)
+                    # Store path mapping (hash -> path)
+                    if 'pdf_paths' not in context.bot_data:
+                        context.bot_data['pdf_paths'] = {}
+                    context.bot_data['pdf_paths'][path_hash] = full_path
+
+                    # Add button with hash ID (fits in 64 bytes)
                     keyboard.append([
                         InlineKeyboardButton(
                             f"📄 {filename}",
-                            callback_data=f"pdf:{idx}"
+                            callback_data=f"pdf:{path_hash}"
                         )
                     ])
-
-        # Store paths in user_data for callback handler
-        context.user_data['proposal_paths'] = proposal_paths
 
         message += "\n💡 _Clique em um botão para gerar o PDF sem usar o agente_"
 
@@ -251,26 +254,30 @@ async def handle_pdf_button(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     user_id = update.effective_user.id
 
-    # Extract index from callback_data (format: "pdf:0", "pdf:1", etc)
+    # Extract hash from callback_data (format: "pdf:abc12345")
     if not query.data or not query.data.startswith("pdf:"):
         await query.edit_message_text("❌ Erro: dados inválidos")
         return
 
-    try:
-        idx = int(query.data[4:])  # Remove "pdf:" prefix and convert to int
-    except ValueError:
-        await query.edit_message_text("❌ Erro: índice inválido")
-        return
+    path_hash = query.data[4:]  # Remove "pdf:" prefix
 
-    # Get path from stored user_data
-    proposal_paths = context.user_data.get('proposal_paths', [])
-    if idx < 0 or idx >= len(proposal_paths):
+    # Get path from bot_data mapping
+    pdf_paths = context.bot_data.get('pdf_paths', {})
+    if path_hash not in pdf_paths:
         await query.edit_message_text("❌ Erro: proposta não encontrada. Use /list novamente.")
         return
 
-    yaml_path = proposal_paths[idx]
+    yaml_path = pdf_paths[path_hash]
 
     try:
+        # Check if file still exists (might have been deleted)
+        yaml_full_path = SUBMODULE_PATH / yaml_path
+        if not yaml_full_path.exists():
+            await query.edit_message_text(
+                f"❌ Esta proposta foi deletada.\n\nUse /list para ver propostas atualizadas."
+            )
+            return
+
         # Update message to show generating status
         await query.edit_message_text(f"🔨 Gerando PDF...\n`{yaml_path}`", parse_mode='Markdown')
 

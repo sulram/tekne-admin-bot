@@ -15,6 +15,7 @@ from bot.handlers.commands import (
     reset_all,
     list_proposals,
     pdf_command,
+    handle_pdf_button,
 )
 
 from bot.handlers.messages import (
@@ -34,6 +35,7 @@ __all__ = [
     "reset_all",
     "list_proposals",
     "pdf_command",
+    "handle_pdf_button",
     # Messages
     "start_proposal",
     "handle_text_message",

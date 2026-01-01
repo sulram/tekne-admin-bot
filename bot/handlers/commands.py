@@ -4,7 +4,7 @@ Command handlers for bot commands (/hello, /help, /cost, /reset*)
 
 import logging
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from bot.auth import check_auth
@@ -195,6 +195,9 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         lines = proposals_text.split('\n')
         message = "📋 *Propostas Recentes*\n\n"
 
+        # Build inline keyboard buttons
+        keyboard = []
+
         for line in lines:
             if line.strip() and '📄' in line:
                 # Extract the path from the line
@@ -208,16 +211,86 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     # docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml -> 2026-01-coca-cola
                     folder = path.split('/')[1] if '/' in path else path
 
-                    message += f"{number}. {folder}\n   `/pdf {path}`\n\n"
+                    # Extract filename without extension for button label
+                    filename = path.split('/')[-1].replace('.yml', '').replace('proposta-', '')
 
-        message += "💡 _Clique em qualquer comando /pdf para gerar o PDF sem usar o agente_"
+                    message += f"{number}. {folder}\n"
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+                    # Add button for this proposal (each button on its own row)
+                    # Path includes docs/ prefix for generate_pdf_from_yaml
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"📄 {filename}",
+                            callback_data=f"pdf:docs/{path}"
+                        )
+                    ])
+
+        message += "\n💡 _Clique em um botão para gerar o PDF sem usar o agente_"
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
         logger.info(f"User {user_id} listed proposals")
 
     except Exception as e:
         logger.error(f"Error listing proposals: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Erro ao listar propostas: {str(e)}")
+
+
+async def handle_pdf_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle PDF generation from inline keyboard button"""
+    query = update.callback_query
+    await query.answer()  # Acknowledge the button click
+
+    user_id = update.effective_user.id
+
+    # Extract path from callback_data (format: "pdf:path/to/file.yml")
+    if not query.data or not query.data.startswith("pdf:"):
+        await query.edit_message_text("❌ Erro: dados inválidos")
+        return
+
+    yaml_path = query.data[4:]  # Remove "pdf:" prefix
+
+    try:
+        # Update message to show generating status
+        await query.edit_message_text(f"🔨 Gerando PDF...\n`{yaml_path}`", parse_mode='Markdown')
+
+        # Generate PDF directly (bypass agent)
+        # yaml_path already includes "docs/" prefix from callback_data
+        logger.info(f"User {user_id} generating PDF via button: {yaml_path}")
+        result = generate_pdf_from_yaml(yaml_path)
+
+        # Check if successful
+        if "PDF gerado com sucesso" in result:
+            # Extract PDF path from result
+            # yaml_path already includes docs/ prefix
+            pdf_path_relative = result.split(": ")[-1] if ": " in result else yaml_path.replace('.yml', '.pdf')
+            pdf_full_path = SUBMODULE_PATH / pdf_path_relative
+
+            if pdf_full_path.exists():
+                # Send the PDF
+                logger.info(f"Sending PDF: {pdf_full_path}")
+                with open(pdf_full_path, 'rb') as pdf_file:
+                    await query.message.reply_document(
+                        document=pdf_file,
+                        filename=pdf_full_path.name,
+                        caption=f"✅ PDF gerado com sucesso!"
+                    )
+
+                # Update original message
+                await query.edit_message_text(
+                    f"✅ PDF gerado com sucesso!\n`{yaml_path}`",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"PDF sent successfully to user {user_id}")
+            else:
+                await query.edit_message_text(f"⚠️ PDF gerado mas não encontrado: {pdf_path_relative}")
+        else:
+            # Error generating PDF
+            await query.edit_message_text(f"❌ {result}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_pdf_button: {e}", exc_info=True)
+        await query.edit_message_text(f"❌ Erro ao gerar PDF: {str(e)}")
 
 
 async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

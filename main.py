@@ -5,7 +5,7 @@ Telegram bot for proposal generation using Claude AI
 
 import logging
 from telegram import BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from config import TELEGRAM_BOT_TOKEN, ALLOWED_USERS
 from bot.handlers import (
@@ -18,6 +18,7 @@ from bot.handlers import (
     reset_all,
     list_proposals,
     pdf_command,
+    handle_pdf_button,
     handle_text_message,
     handle_photo,
     handle_audio,
@@ -69,6 +70,9 @@ app.add_handler(CommandHandler("resetdaily", reset_daily))
 app.add_handler(CommandHandler("resetall", reset_all))
 app.add_handler(CommandHandler("list", list_proposals))  # List proposals with /pdf links
 app.add_handler(CommandHandler("pdf", pdf_command))  # Generate PDF directly (bypass agent)
+
+# Callback query handler for inline keyboard buttons
+app.add_handler(CallbackQueryHandler(handle_pdf_button, pattern="^pdf:"))
 
 # Message handlers (order matters - specific before general)
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

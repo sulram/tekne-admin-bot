@@ -85,6 +85,23 @@ def load_claude_instructions() -> str:
 **DO NOT skip the commit step!** All proposals must be versioned in git.
 **DO NOT commit PDF files** - only YAML and images.
 
+## FILE NAMING RULES
+
+**CRITICAL: Keep filenames SHORT and WITHOUT special characters:**
+
+When creating new proposals with `save_proposal_yaml`, the `project_slug` parameter MUST be:
+- **Maximum 3-4 words** (not the entire title!)
+- **NO accents or special characters** (use ASCII only)
+- **Use hyphens** to separate words
+- **Lowercase only**
+
+Examples:
+- ✅ "curso-roblox" (not "curso-de-roblox-para-jovens-desenvolvimento-criativo-e-tecnológico")
+- ✅ "proposta-metaverso" (not "juventude-e-mudancas-climaticas-uma-exposicao-no-metaverso")
+- ✅ "web-design" (not "design-de-websites-responsivos-e-acessiveis")
+- ❌ "curso-de-roblox-para-jovens-desenvolvimento-criativo-e-tecnológico" (too long!)
+- ❌ "tecnológico" (has accents!)
+
 ## IMAGE HANDLING (User-provided images)
 
 When user wants to add an image to the proposal, they have TWO options:
@@ -145,6 +162,39 @@ When user wants to add an image to the proposal, they have TWO options:
     return base_instructions + bot_instructions
 
 
+def normalize_slug(text: str) -> str:
+    """
+    Normalize text to create a safe filename slug:
+    - Remove accents and special characters
+    - Convert to lowercase
+    - Replace spaces/underscores with hyphens
+    - Remove consecutive hyphens
+    """
+    import unicodedata
+
+    # Normalize unicode characters (remove accents)
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(char for char in text if unicodedata.category(char) != 'Mn')
+
+    # Convert to lowercase
+    text = text.lower()
+
+    # Replace spaces and underscores with hyphens
+    text = text.replace(" ", "-").replace("_", "-")
+
+    # Keep only alphanumeric and hyphens
+    text = ''.join(char for char in text if char.isalnum() or char == '-')
+
+    # Remove consecutive hyphens
+    while '--' in text:
+        text = text.replace('--', '-')
+
+    # Remove leading/trailing hyphens
+    text = text.strip('-')
+
+    return text
+
+
 @tool
 def save_proposal_yaml(
     yaml_content: str,
@@ -192,9 +242,9 @@ def save_proposal_yaml(
 
     year_month = date[:7]  # YYYY-MM
 
-    # Slugify names
-    client_slug = client_name.lower().replace(" ", "-").replace("_", "-")
-    project_slug = project_slug.lower().replace(" ", "-").replace("_", "-")
+    # Normalize slugs (remove accents, special chars)
+    client_slug = normalize_slug(client_name)
+    project_slug = normalize_slug(project_slug)
 
     # Create directory path: docs/YYYY-MM-client-slug/
     dir_name = f"{year_month}-{client_slug}"

@@ -335,8 +335,8 @@ async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
 
     if pdf_match:
         pdf_relative_path = pdf_match.group(0)
-        # Remove any trailing punctuation
-        pdf_relative_path = pdf_relative_path.rstrip('.,;:)')
+        # Remove any trailing punctuation and backticks
+        pdf_relative_path = pdf_relative_path.strip('`').rstrip('.,;:)')
 
         pdf_path = Path("submodules/tekne-proposals") / pdf_relative_path
 

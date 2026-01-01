@@ -67,110 +67,50 @@ def load_claude_instructions() -> str:
 
 ---
 
-## WORKFLOW INSTRUCTIONS (Telegram Bot)
+## WORKFLOW
 
-**IMPORTANT: You MUST follow this workflow after saving/generating proposals:**
+After saving/editing YAML and generating PDF:
+- ALWAYS commit and push: `commit_and_push_submodule("Add proposal for X", ["docs/.../file.yml"])`
+- Include YAML + images only (NO PDF files)
 
-1. After calling `save_proposal_yaml` or editing a YAML file:
-   - The file is saved to the git repository
+## LISTING & EDITING PROPOSALS
 
-2. After calling `generate_pdf_from_yaml`:
-   - The PDF is generated in the same directory
+**Listing proposals:**
+- `list_existing_proposals(limit)` returns most recent proposals (default: 10)
+- Sorted by date (YYYY-MM prefix) in descending order
 
-3. **ALWAYS commit and push changes** using `commit_and_push_submodule`:
-   - Include YAML files and images (DO NOT include PDF files)
-   - Use descriptive commit message (e.g., "Add proposal for [Client] - [Project]")
-   - Example: `commit_and_push_submodule("Add SESC proposal - Youth and Climate Change", ["docs/2025-12-sesc/proposta-metaverso.yml"])`
+**Editing proposals:**
+- User can request to edit by number (from list) or by name/client
+- Use `load_proposal_yaml(path)` to load existing proposal
 
-**DO NOT skip the commit step!** All proposals must be versioned in git.
-**DO NOT commit PDF files** - only YAML and images.
+**PDF regeneration:**
+- When user asks for PDF only ("cadê o PDF?"): list → find → generate (no YAML changes)
 
-## PDF REGENERATION
+## FILE NAMING
 
-When user asks ONLY for the PDF without requesting any changes:
-- Examples: "me manda o PDF", "cadê o PDF?", "quero o PDF", "gera o PDF"
-- Use `list_existing_proposals` to find the most recent proposal
-- Use `generate_pdf_from_yaml` with the YAML path to regenerate PDF
-- DO NOT make any changes to the YAML file
-- The bot will automatically send the PDF file after generation
+`project_slug` must be: 3-4 words max, no accents, lowercase, hyphens only
+Examples: ✅ "curso-roblox", "proposta-metaverso" ❌ "curso-de-roblox-para-jovens..."
 
-## FILE NAMING RULES
+## IMAGE HANDLING
 
-**CRITICAL: Keep filenames SHORT and WITHOUT special characters:**
+**User-provided images:**
+- When user mentions adding an image, call `wait_for_user_image(proposal_dir, position)`
+- Position: "before_first_section" (default), "section_X_before", or "section_X"
+- After user sends image, bot notifies you with the path
+- Then: load YAML → add image → save YAML → generate PDF
 
-When creating new proposals with `save_proposal_yaml`, the `project_slug` parameter MUST be:
-- **Maximum 3-4 words** (not the entire title!)
-- **NO accents or special characters** (use ASCII only)
-- **Use hyphens** to separate words
-- **Lowercase only**
+**Image modifiers (YAML):**
+- `image_before: file.png` → before section title
+- `image: file.png` → after section content
+- Place in sections, NOT in meta block
 
-Examples:
-- ✅ "curso-roblox" (not "curso-de-roblox-para-jovens-desenvolvimento-criativo-e-tecnológico")
-- ✅ "proposta-metaverso" (not "juventude-e-mudancas-climaticas-uma-exposicao-no-metaverso")
-- ✅ "web-design" (not "design-de-websites-responsivos-e-acessiveis")
-- ❌ "curso-de-roblox-para-jovens-desenvolvimento-criativo-e-tecnológico" (too long!)
-- ❌ "tecnológico" (has accents!)
+## RESPONSE STYLE
 
-## IMAGE HANDLING (User-provided images)
-
-When user wants to add an image to the proposal, they have TWO options:
-
-**Option 1: AI-generated image** (using DALL-E)
-- Use `generate_image_dalle` tool as usual
-
-**Option 2: User sends their own image**
-- User mentions adding/inserting/including an image to the proposal (any phrasing)
-- Examples: "adicionando uma imagem", "quero adicionar imagem", "inserir uma foto", "colocar uma imagem"
-- **ALWAYS assume they will send their own image** unless they explicitly ask you to generate with AI
-- DO NOT ask "qual você prefere?" or offer options
-- Simply respond: "Entendido! Aguardo você me enviar a imagem pelo Telegram 📷"
-- Call `wait_for_user_image(proposal_dir, position)` tool IMMEDIATELY
-  - proposal_dir: e.g., "docs/2025-12-client"
-  - position options:
-    - "before_first_section": image_before in first section (default)
-    - "after_presentation": image_after in first section
-    - "section_X_before": image_before in section X (e.g., "section_2_before")
-    - "section_X_after": image_after in section X (e.g., "section_2_after")
-    - "section_X": image in section X (e.g., "section_1")
-- Bot will mark session as waiting for image
-- User sends image via Telegram
-- Bot automatically saves image and notifies you with the image path
-- You MUST follow this exact order:
-  1. Use `load_proposal_yaml` to load the existing YAML file
-  2. Use `add_user_image_to_yaml` to add the image reference to the YAML content
-  3. Use `save_proposal_yaml` with `existing_file_path` to save the updated YAML
-  4. ONLY THEN use `generate_pdf_from_yaml` to generate the PDF
-
-**CRITICAL**: You MUST save the YAML file BEFORE generating the PDF! Otherwise the PDF won't have the image.
-
-**IMPORTANT**: When user mentions adding an image in ANY form, ALWAYS assume they're sending it and use `wait_for_user_image` tool!
-
-## RESPONSE STYLE (Telegram Bot)
-
-**CRITICAL: Keep responses SHORT and CONCISE to save tokens:**
-
-1. **Use past tense** when describing completed actions:
-   - ✅ "Editei a proposta e gerei o PDF"
-   - ❌ "Vou editar a proposta"
-
-2. **Be direct and brief**:
-   - ✅ "✅ Editei proposta Escola Eleva: expandi apresentação com 3 novos parágrafos. PDF gerado."
-   - ❌ Long explanations with many bullet points and sections
-
-3. **ALWAYS include PDF path** when you generate a PDF:
-   - The tool returns the path - ALWAYS mention it in your response
-   - ✅ "PDF gerado: docs/2025-12-client/proposta.pdf"
-   - ❌ "PDF gerado com sucesso" (missing path)
-
-4. **Telegram Markdown** - Use ONLY these formats:
-   - Bold: *texto em negrito*
-   - Italic: _texto em itálico_
-   - Code: `código`
-   - Do NOT use ## headers, ### subheaders, or ** for bold
-
-5. **Maximum 3-4 lines** unless specifically asked for details
-
-6. **No emojis in excess** - max 2-3 per message
+- Short and concise (2-3 lines max)
+- Use past tense: "Editei a proposta" not "Vou editar"
+- DO NOT include PDF path in final response (bot sends PDF automatically)
+- Telegram markdown: *bold*, _italic_, `code` (no ## headers)
+- Max 1-2 emojis per message
 """
 
     return base_instructions + bot_instructions
@@ -314,11 +254,19 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
         logger.info(f"⏱️  PDF generation took {elapsed_time:.2f} seconds")
 
         if result.returncode == 0:
-            send_status(f"✅ PDF gerado em {elapsed_time:.1f}s!")
+            # Find the actual PDF file generated (it may have a different name than the YAML)
+            yaml_dir = yaml_full_path.parent
+            pdf_files = sorted(yaml_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
 
-            # Always construct PDF path from YAML path to ensure correctness
-            # Convert docs/2025-12-client/proposta.yml to docs/2025-12-client/proposta.pdf
-            pdf_path = yaml_file_path.replace('.yml', '.pdf')
+            if pdf_files:
+                # Get the most recently modified PDF (the one just generated)
+                pdf_path = str(pdf_files[0].relative_to(SUBMODULE_PATH))
+            else:
+                # Fallback to assuming same name as YAML
+                pdf_path = yaml_file_path.replace('.yml', '.pdf')
+
+            # Send status WITH PDF path so callback can detect and send it
+            send_status(f"✅ PDF gerado em {elapsed_time:.1f}s! Caminho: {pdf_path}")
 
             logger.info(f"PDF path: {pdf_path}")
             return f"PDF gerado com sucesso: {pdf_path}"
@@ -439,9 +387,12 @@ def commit_and_push_submodule(message: str, files: Optional[List[str]] = None) -
 
 
 @tool
-def list_existing_proposals() -> str:
+def list_existing_proposals(limit: int = 10) -> str:
     """
-    List all existing proposals in docs/ directory
+    List existing proposals in docs/ directory, sorted by date (most recent first)
+
+    Args:
+        limit: Maximum number of proposals to return (default: 10)
 
     Returns:
         Formatted list of proposals with their paths
@@ -450,7 +401,7 @@ def list_existing_proposals() -> str:
         return "No proposals found. docs/ directory doesn't exist."
 
     proposals = []
-    for project_dir in sorted(DOCS_PATH.iterdir()):
+    for project_dir in sorted(DOCS_PATH.iterdir(), reverse=True):  # Reverse sort for most recent first
         if project_dir.is_dir():
             # Find YAML files in directory
             yaml_files = list(project_dir.glob("*.yml"))
@@ -464,14 +415,32 @@ def list_existing_proposals() -> str:
                         client = meta.get('client', 'Sem cliente')
                         date = meta.get('date', 'Sem data')
 
-                        proposals.append(f"📄 {project_dir.name}/{yaml_file.name}\n   Cliente: {client}\n   Título: {title}\n   Data: {date}")
+                        proposals.append({
+                            'path': f"{project_dir.name}/{yaml_file.name}",
+                            'client': client,
+                            'title': title,
+                            'date': date
+                        })
                 except Exception as e:
-                    proposals.append(f"❌ {project_dir.name}/{yaml_file.name} (erro ao ler)")
+                    proposals.append({
+                        'path': f"{project_dir.name}/{yaml_file.name}",
+                        'client': 'Erro',
+                        'title': 'Erro ao ler',
+                        'date': 'N/A'
+                    })
 
     if not proposals:
         return "Nenhuma proposta encontrada em docs/"
 
-    return "Propostas existentes:\n\n" + "\n\n".join(proposals)
+    # Limit to most recent N proposals
+    proposals = proposals[:limit]
+
+    # Format output
+    formatted = []
+    for i, p in enumerate(proposals, 1):
+        formatted.append(f"{i}. 📄 {p['path']}\n   Cliente: {p['client']}\n   Título: {p['title']}\n   Data: {p['date']}")
+
+    return f"Propostas mais recentes ({len(proposals)}):\n\n" + "\n\n".join(formatted)
 
 
 @tool
@@ -483,9 +452,7 @@ def wait_for_user_image(proposal_dir: str, position: str = "before_first_section
         proposal_dir: Directory where proposal is being created (e.g., "docs/2025-12-client")
         position: Where to place the image - options:
                  - "before_first_section" (default): image_before in first section
-                 - "after_presentation": image_after in first section
                  - "section_X_before": image_before in section X (e.g., "section_1_before")
-                 - "section_X_after": image_after in section X (e.g., "section_1_after")
                  - "section_X": image in section X (e.g., "section_0", "section_1")
 
     Returns:
@@ -535,25 +502,12 @@ def add_user_image_to_yaml(
                 data["sections"][0]["image_before"] = image_path
                 logger.info(f"Added image_before to first section: {image_path}")
 
-        elif position == "after_presentation":
-            # Add image_after to first section (presentation)
-            if "sections" in data and len(data["sections"]) > 0:
-                data["sections"][0]["image_after"] = image_path
-                logger.info(f"Added image_after to presentation: {image_path}")
-
         elif position.startswith("section_") and position.endswith("_before"):
             # Add image_before to specific section (e.g., "section_1_before")
             section_idx = int(position.split("_")[1])
             if "sections" in data and len(data["sections"]) > section_idx:
                 data["sections"][section_idx]["image_before"] = image_path
                 logger.info(f"Added image_before to section {section_idx}: {image_path}")
-
-        elif position.startswith("section_") and position.endswith("_after"):
-            # Add image_after to specific section (e.g., "section_1_after")
-            section_idx = int(position.split("_")[1])
-            if "sections" in data and len(data["sections"]) > section_idx:
-                data["sections"][section_idx]["image_after"] = image_path
-                logger.info(f"Added image_after to section {section_idx}: {image_path}")
 
         elif position.startswith("section_"):
             # Add image to specific section (e.g., "section_1")
@@ -598,7 +552,7 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 # Create the agent
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
-    model=Claude(id="claude-haiku-4-5"),  # Using Haiku for cost efficiency
+    model=Claude(id="claude-sonnet-4-5"),  # Sonnet 4.5 for better accuracy
     db=InMemoryDb(),  # In-memory storage - YAML files are the source of truth
     instructions=load_claude_instructions(),
     tools=[

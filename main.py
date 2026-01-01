@@ -92,7 +92,7 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_sessions[user_id] = {"session_id": session_id, "active": True}
 
     # Send initial message to agent
-    initial_message = "Olá! Quero criar uma nova proposta."
+    initial_message = "Olá! Liste as 10 propostas mais recentes. O que você gostaria de fazer: criar uma nova proposta ou editar uma existente?"
 
     status_msg = await update.message.reply_text("🚀 Iniciando gerador de propostas...")
 
@@ -225,18 +225,54 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # Setup status callback for this user - send messages immediately
         pdf_generated = False  # Flag to track if PDF was generated
+        pdf_path_detected = None  # Store PDF path when detected
+
+        async def send_pdf_now(pdf_path_str: str):
+            """Send PDF immediately when detected"""
+            try:
+                from pathlib import Path
+                pdf_full_path = Path("submodules/tekne-proposals") / pdf_path_str
+
+                if pdf_full_path.exists():
+                    logger.info(f"📄 Sending PDF immediately: {pdf_full_path}")
+                    with open(pdf_full_path, 'rb') as pdf_file:
+                        await update.message.reply_document(
+                            document=pdf_file,
+                            filename=pdf_full_path.name,
+                            caption=f"📄 {pdf_full_path.name}"
+                        )
+                    logger.info("✅ PDF sent successfully")
+                else:
+                    logger.warning(f"PDF not found: {pdf_full_path}")
+            except Exception as e:
+                logger.error(f"Error sending PDF immediately: {e}", exc_info=True)
+
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
-            nonlocal progress_task, pdf_generated
+            nonlocal progress_task, pdf_generated, pdf_path_detected
             logger.info(f"Status callback received: {message}")
-            # Check if PDF was generated
+
+            # Check if PDF was generated and extract path
             if "PDF gerado" in message:
                 pdf_generated = True
-                logger.info("🎯 PDF generation detected - will send file after completion")
+                logger.info("🎯 PDF generation detected - extracting path...")
+
+                # Extract PDF path from message
+                import re
+                pdf_match = re.search(r'docs/[^\s)]+\.pdf', message)
+                if pdf_match:
+                    pdf_path_detected = pdf_match.group(0)
+                    logger.info(f"📍 PDF path detected: {pdf_path_detected}")
+                    # Send PDF immediately via async task
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(send_pdf_now(pdf_path_detected))
+                    )
+
             # Cancel progress when status message arrives
             if progress_task and not progress_task.done():
                 logger.info("Cancelling progress task due to status callback")
                 progress_task.cancel()
+
             # Create async task to send message immediately - use call_soon_threadsafe
             loop.call_soon_threadsafe(
                 lambda: asyncio.create_task(update.message.reply_text(message))
@@ -284,10 +320,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Send response (handles long messages)
             await send_long_message(update, response, status_msg=None)
 
-            # Send PDF if it was generated (detected via callback)
-            if pdf_generated:
-                logger.info("🎯 Sending PDF after generation...")
-                await send_pdf_if_exists(update, response)
+            # PDF already sent immediately via callback - no need to send again
 
         except (httpcore.ConnectError, APIConnectionError, APITimeoutError) as e:
             logger.error(f"API connection error for user {user_id}: {str(e)}")
@@ -452,14 +485,49 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Setup callbacks for agent processing
         loop = asyncio.get_event_loop()
         pdf_generated = False  # Flag to track if PDF was generated
+        pdf_path_detected = None
+
+        async def send_pdf_now(pdf_path_str: str):
+            """Send PDF immediately when detected"""
+            try:
+                from pathlib import Path
+                pdf_full_path = Path("submodules/tekne-proposals") / pdf_path_str
+
+                if pdf_full_path.exists():
+                    logger.info(f"📄 Sending PDF immediately: {pdf_full_path}")
+                    with open(pdf_full_path, 'rb') as pdf_file:
+                        await update.message.reply_document(
+                            document=pdf_file,
+                            filename=pdf_full_path.name,
+                            caption=f"📄 {pdf_full_path.name}"
+                        )
+                    logger.info("✅ PDF sent successfully")
+                else:
+                    logger.warning(f"PDF not found: {pdf_full_path}")
+            except Exception as e:
+                logger.error(f"Error sending PDF immediately: {e}", exc_info=True)
+
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
-            nonlocal progress_task, pdf_generated
+            nonlocal progress_task, pdf_generated, pdf_path_detected
             logger.info(f"Status callback received: {message}")
-            # Check if PDF was generated
+
+            # Check if PDF was generated and extract path
             if "PDF gerado" in message:
                 pdf_generated = True
-                logger.info("🎯 PDF generation detected - will send file after completion")
+                logger.info("🎯 PDF generation detected - extracting path...")
+
+                # Extract PDF path from message
+                import re
+                pdf_match = re.search(r'docs/[^\s)]+\.pdf', message)
+                if pdf_match:
+                    pdf_path_detected = pdf_match.group(0)
+                    logger.info(f"📍 PDF path detected: {pdf_path_detected}")
+                    # Send PDF immediately via async task
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(send_pdf_now(pdf_path_detected))
+                    )
+
             if progress_task and not progress_task.done():
                 progress_task.cancel()
             loop.call_soon_threadsafe(
@@ -502,10 +570,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             await send_long_message(update, response, status_msg=None)
 
-            # Send PDF if it was generated (detected via callback)
-            if pdf_generated:
-                logger.info("🎯 Sending PDF after generation...")
-                await send_pdf_if_exists(update, response)
+            # PDF already sent immediately via callback - no need to send again
         except Exception as e:
             logger.error(f"Error processing image with agent: {str(e)}", exc_info=True)
             if progress_task and not progress_task.done():
@@ -598,13 +663,48 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Setup status callback for this user - send messages immediately
             loop = asyncio.get_event_loop()
             pdf_generated = False  # Flag to track if PDF was generated
+            pdf_path_detected = None
+
+            async def send_pdf_now(pdf_path_str: str):
+                """Send PDF immediately when detected"""
+                try:
+                    from pathlib import Path
+                    pdf_full_path = Path("submodules/tekne-proposals") / pdf_path_str
+
+                    if pdf_full_path.exists():
+                        logger.info(f"📄 Sending PDF immediately: {pdf_full_path}")
+                        with open(pdf_full_path, 'rb') as pdf_file:
+                            await update.message.reply_document(
+                                document=pdf_file,
+                                filename=pdf_full_path.name,
+                                caption=f"📄 {pdf_full_path.name}"
+                            )
+                        logger.info("✅ PDF sent successfully")
+                    else:
+                        logger.warning(f"PDF not found: {pdf_full_path}")
+                except Exception as e:
+                    logger.error(f"Error sending PDF immediately: {e}", exc_info=True)
+
             def status_callback(message: str):
                 """Callback to send status messages in real-time"""
-                nonlocal progress_task, pdf_generated
-                # Check if PDF was generated
+                nonlocal progress_task, pdf_generated, pdf_path_detected
+
+                # Check if PDF was generated and extract path
                 if "PDF gerado" in message:
                     pdf_generated = True
-                    logger.info("🎯 PDF generation detected - will send file after completion")
+                    logger.info("🎯 PDF generation detected - extracting path...")
+
+                    # Extract PDF path from message
+                    import re
+                    pdf_match = re.search(r'docs/[^\s)]+\.pdf', message)
+                    if pdf_match:
+                        pdf_path_detected = pdf_match.group(0)
+                        logger.info(f"📍 PDF path detected: {pdf_path_detected}")
+                        # Send PDF immediately via async task
+                        loop.call_soon_threadsafe(
+                            lambda: asyncio.create_task(send_pdf_now(pdf_path_detected))
+                        )
+
                 # Cancel progress when status message arrives
                 if progress_task and not progress_task.done():
                     progress_task.cancel()
@@ -652,10 +752,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 # Send response (handles long messages)
                 await send_long_message(update, response, status_msg=None)
 
-                # Send PDF if it was generated (detected via callback)
-                if pdf_generated:
-                    logger.info("🎯 Sending PDF after generation...")
-                    await send_pdf_if_exists(update, response)
+                # PDF already sent immediately via callback - no need to send again
 
             except (httpcore.ConnectError, APIConnectionError, APITimeoutError) as e:
                 logger.error(f"API connection error for user {user_id}: {str(e)}")

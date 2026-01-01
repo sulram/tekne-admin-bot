@@ -43,9 +43,10 @@ else:
 
 async def post_init(application) -> None:
     """Set bot commands in Telegram UI with organized categories"""
-    # Main commands - shown in the menu (top 3 most used)
+    # Main commands - shown in the menu (most used)
     commands = [
         BotCommand("proposal", "✨ Criar ou editar propostas"),
+        BotCommand("list", "📋 Listar propostas e gerar PDF"),
         BotCommand("reset", "🔄 Nova sessão (limpar conversa)"),
         BotCommand("help", "📖 Ver todos os comandos"),
     ]

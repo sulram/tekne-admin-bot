@@ -9,11 +9,17 @@ from datetime import datetime
 from typing import Optional
 from pathlib import Path
 from agno.tools import tool
+from ruamel.yaml import YAML
 
 from config import SUBMODULE_PATH, DOCS_PATH
 from core.callbacks import send_status
 
 logger = logging.getLogger(__name__)
+
+# Initialize ruamel.yaml for surgical edits (preserves formatting/comments)
+ryaml = YAML()
+ryaml.preserve_quotes = True
+ryaml.default_flow_style = False
 
 
 def normalize_slug(text: str) -> str:
@@ -135,7 +141,11 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 
     try:
         content = yaml_full_path.read_text(encoding='utf-8')
-        logger.info(f"Loaded proposal: {yaml_file_path} ({len(content)} chars)")
+        token_estimate = len(content) // 4
+
+        logger.info(f"📄 Loaded full proposal: {yaml_file_path}")
+        logger.info(f"   Size: {len(content)} chars (~{token_estimate} tokens)")
+        logger.info(f"   ⚠️  Consider using get_proposal_structure + read_section_content instead!")
 
         # Return YAML directly without markdown formatting to save tokens
         return content
@@ -184,9 +194,9 @@ def update_proposal_field(
         logger.info(f"   Field: {field_path}")
         logger.info(f"   New value type: {type(new_value).__name__}")
 
-        # Load existing YAML
+        # Load existing YAML using ruamel.yaml (preserves formatting)
         with open(yaml_full_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
+            data = ryaml.load(f)
 
         # Parse field path (e.g., "sections[0].title" or "meta.client")
         parts = []
@@ -247,16 +257,20 @@ def update_proposal_field(
                 return f"Error: Expected dict for key access"
             target[final_key] = new_value
 
-        # Save back to file
+        # Save back to file using ruamel.yaml (preserves formatting/comments)
         with open(yaml_full_path, 'w', encoding='utf-8') as f:
-            yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+            ryaml.dump(data, f)
+
+        # Return minimal confirmation (don't send YAML back to agent)
+        response_msg = f"✅ Updated '{field_path}'"
 
         logger.info(f"✅ Successfully updated field in YAML:")
         logger.info(f"   Path: {field_path}")
         logger.info(f"   File: {yaml_file_path}")
+        logger.info(f"   Response size: {len(response_msg)} chars (~{len(response_msg)//4} tokens)")
         send_status(f"✏️ Atualizei o campo '{field_path}'!")
 
-        return f"✅ Successfully updated {field_path} in {yaml_file_path}"
+        return response_msg
 
     except Exception as e:
         logger.error(f"Error updating field: {e}")
@@ -330,7 +344,13 @@ def get_proposal_structure(yaml_file_path: str) -> str:
                 result.append(f"      → {', '.join(details)}")
 
         output = "\n".join(result)
-        logger.info(f"📋 Structure: {len(output)} chars (vs ~{len(str(data))} full YAML)")
+        full_yaml_size = len(str(data))
+        token_estimate = len(output) // 4
+        savings_pct = ((full_yaml_size - len(output)) / full_yaml_size * 100) if full_yaml_size > 0 else 0
+
+        logger.info(f"📋 Structure: {len(output)} chars (~{token_estimate} tokens)")
+        logger.info(f"   vs Full YAML: {full_yaml_size} chars (~{full_yaml_size//4} tokens)")
+        logger.info(f"   💰 Savings: {savings_pct:.1f}% fewer tokens")
 
         return output
 
@@ -421,7 +441,12 @@ def read_section_content(
 
         output = "\n".join(result)
         full_yaml_size = len(str(data))
-        logger.info(f"📖 Section {section_index}: {len(output)} chars (vs ~{full_yaml_size} full YAML)")
+        token_estimate = len(output) // 4
+        savings_pct = ((full_yaml_size - len(output)) / full_yaml_size * 100) if full_yaml_size > 0 else 0
+
+        logger.info(f"📖 Section {section_index}: {len(output)} chars (~{token_estimate} tokens)")
+        logger.info(f"   vs Full YAML: {full_yaml_size} chars (~{full_yaml_size//4} tokens)")
+        logger.info(f"   💰 Savings: {savings_pct:.1f}% fewer tokens")
 
         return output
 

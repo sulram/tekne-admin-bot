@@ -501,6 +501,10 @@ def _list_proposals_impl(limit: int = 10) -> str:
     if not proposals:
         return "Nenhuma proposta encontrada em docs/"
 
+    # Sort by date (DESC) then by folder name (DESC)
+    # This ensures proposals within same folder are also sorted by date
+    proposals.sort(key=lambda p: (p.get('date', ''), p.get('path', '')), reverse=True)
+
     # Limit to most recent N proposals
     proposals = proposals[:limit]
 

@@ -134,8 +134,27 @@ Need to see content?
 Make changes → update_proposal_field() (ALWAYS!)
 ```
 
-**PDF regeneration:**
-- When user asks for PDF only ("cadê o PDF?"): list → find → generate (no YAML changes)
+**PDF generation WITHOUT changes (CRITICAL - saves ~800 tokens):**
+
+When user says:
+- "apenas gere o pdf"
+- "gere o pdf da 2 (sem alterações)"
+- "cadê o PDF?"
+- "regenere o PDF"
+
+**DO THIS:**
+1. Use `list_existing_proposals()` if you don't know the path
+2. Call `generate_pdf_from_yaml(yaml_path)` DIRECTLY
+3. **DO NOT** call `load_proposal_yaml()` or `update_proposal_field()`
+4. **DO NOT** try to commit (git not available in production)
+
+**Example flow:**
+```
+User: "apenas gere o pdf da 2"
+→ generate_pdf_from_yaml("docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml")
+→ PDF sent automatically to user
+→ Done (no commit needed)
+```
 
 ## FILE NAMING
 

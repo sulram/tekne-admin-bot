@@ -55,14 +55,17 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
             if pdf_files:
                 # Get the most recently modified PDF (the one just generated)
                 pdf_path = str(pdf_files[0].relative_to(SUBMODULE_PATH))
+                logger.info(f"✅ Found PDF file: {pdf_path}")
             else:
                 # Fallback to assuming same name as YAML
                 pdf_path = yaml_file_path.replace('.yml', '.pdf')
+                logger.warning(f"⚠️  No PDF files found in {yaml_dir}, using fallback: {pdf_path}")
 
             # Send status WITH PDF path so callback can detect and send it
+            logger.info(f"📤 Sending status with PDF path: {pdf_path}")
             send_status(f"✅ PDF gerado em {elapsed_time:.1f}s! Caminho: {pdf_path}")
 
-            logger.info(f"PDF path: {pdf_path}")
+            logger.info(f"✅ PDF generation complete: {pdf_path}")
             return f"PDF gerado com sucesso: {pdf_path}"
         else:
             return f"Error generating PDF: {result.stderr}"

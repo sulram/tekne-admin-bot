@@ -33,7 +33,12 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ANTHROPIC_API_KEY=your_anthropic_api_key
 OPENAI_API_KEY=your_openai_api_key
 ALLOWED_USERS=27463101  # Comma-separated user IDs
+
+# Optional: GitHub token for git push operations (if bot needs to commit proposals)
+GITHUB_TOKEN=your_github_personal_access_token
 ```
+
+**Note:** `GITHUB_TOKEN` is only needed if you want the bot to automatically commit and push proposal changes to the repository. Without it, the bot can still read and generate PDFs, but cannot push updates.
 
 ### 3. Build Settings
 

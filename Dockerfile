@@ -24,6 +24,10 @@ RUN uv sync --frozen
 # Copy application code (submodules will be populated by Dokploy's git clone)
 COPY . .
 
+# Copy and set executable permissions for entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Create data directory for cost tracking persistence
 RUN mkdir -p /app/data
 
@@ -31,5 +35,5 @@ RUN mkdir -p /app/data
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Run the bot
-CMD [".venv/bin/python", "main.py"]
+# Use entrypoint script to initialize git before starting bot
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

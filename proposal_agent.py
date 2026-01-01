@@ -653,7 +653,7 @@ proposal_agent = Agent(
         load_proposal_yaml,
     ],
     add_history_to_context=True,
-    num_history_responses=3,  # Only keep last 3 exchanges to save tokens
+    num_history_runs=5,  # Only keep last 5 runs to save tokens
     markdown=False,  # Disable markdown - Telegram uses different format
 )
 

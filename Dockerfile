@@ -21,11 +21,8 @@ COPY pyproject.toml uv.lock ./
 # Install Python dependencies with uv
 RUN uv sync --frozen
 
-# Copy application code
+# Copy application code (submodules will be populated by Dokploy's git clone)
 COPY . .
-
-# Initialize git submodules (if not already done)
-RUN git submodule update --init --recursive || echo "Submodules already initialized"
 
 # Create data directory for cost tracking persistence
 RUN mkdir -p /app/data

@@ -532,22 +532,21 @@ def list_existing_proposals_tool(limit: int = 10) -> str:
 
 
 @tool
-def delete_proposal(yaml_file_path: str, delete_entire_folder: bool = False) -> str:
+def delete_proposal(yaml_file_path: str) -> str:
     """
-    Delete a proposal YAML file or entire project folder.
+    Delete an entire proposal folder (including YAML, PDFs, and images).
 
-    WARNING: This operation cannot be undone! The file/folder will be permanently deleted.
+    WARNING: This operation cannot be undone! The entire project folder will be permanently deleted.
 
     Args:
-        yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
-        delete_entire_folder: If True, delete the entire project folder (default: False)
+        yaml_file_path: Relative path to any YAML file in the folder (e.g., "docs/2026-01-client/proposta-x.yml")
+                       The entire parent folder will be deleted.
 
     Returns:
         Success message or error
 
-    Examples:
-        - delete_proposal("docs/2026-01-test/proposta-demo.yml") → Delete only the YAML file
-        - delete_proposal("docs/2026-01-test/proposta-demo.yml", delete_entire_folder=True) → Delete entire folder
+    Example:
+        - delete_proposal("docs/2026-01-test/proposta-demo.yml") → Deletes entire "2026-01-test" folder
     """
     yaml_full_path = SUBMODULE_PATH / yaml_file_path
 
@@ -555,45 +554,30 @@ def delete_proposal(yaml_file_path: str, delete_entire_folder: bool = False) -> 
         return f"Error: File not found: {yaml_file_path}"
 
     try:
-        if delete_entire_folder:
-            # Delete entire project folder
-            folder_path = yaml_full_path.parent
-            folder_name = folder_path.name
+        # Always delete entire project folder
+        folder_path = yaml_full_path.parent
+        folder_name = folder_path.name
 
-            # Safety check: ensure it's in docs/ and looks like a project folder
-            if not str(folder_path).startswith(str(DOCS_PATH)):
-                return f"Error: Path is not in docs/ directory: {folder_path}"
+        # Safety check: ensure it's in docs/ and looks like a project folder
+        if not str(folder_path).startswith(str(DOCS_PATH)):
+            return f"Error: Path is not in docs/ directory: {folder_path}"
 
-            # Count files in folder
-            files_in_folder = list(folder_path.glob("*"))
-            file_count = len(files_in_folder)
+        # Count files in folder
+        files_in_folder = list(folder_path.glob("*"))
+        file_count = len(files_in_folder)
 
-            # Delete folder and all contents
-            import shutil
-            shutil.rmtree(folder_path)
+        # List files for logging
+        file_names = [f.name for f in files_in_folder]
+        logger.info(f"📋 Files to be deleted: {', '.join(file_names)}")
 
-            logger.info(f"🗑️  Deleted entire folder: {folder_name} ({file_count} files)")
-            send_status(f"🗑️ Deletei a pasta '{folder_name}' ({file_count} arquivos)")
+        # Delete folder and all contents
+        import shutil
+        shutil.rmtree(folder_path)
 
-            return f"✅ Deleted entire folder: {folder_name} ({file_count} files)\n\n⚠️ Remember to commit and push this change using commit_and_push_submodule!"
+        logger.info(f"🗑️  Deleted entire folder: {folder_name} ({file_count} files)")
+        send_status(f"🗑️ Deletei a pasta '{folder_name}' com {file_count} arquivo(s)")
 
-        else:
-            # Delete only the YAML file
-            file_name = yaml_full_path.name
-            yaml_full_path.unlink()
-
-            logger.info(f"🗑️  Deleted file: {yaml_file_path}")
-            send_status(f"🗑️ Deletei o arquivo '{file_name}'")
-
-            # Check if folder is now empty
-            folder_path = yaml_full_path.parent
-            remaining_files = list(folder_path.glob("*"))
-
-            if not remaining_files:
-                # Folder is empty, suggest deleting it
-                return f"✅ Deleted file: {file_name}\n\nℹ️  The folder '{folder_path.name}' is now empty. You can delete it by calling delete_proposal again with delete_entire_folder=True.\n\n⚠️ Remember to commit and push this change using commit_and_push_submodule!"
-            else:
-                return f"✅ Deleted file: {file_name}\n\n⚠️ Remember to commit and push this change using commit_and_push_submodule!"
+        return f"✅ Deleted entire folder: {folder_name} ({file_count} files: {', '.join(file_names)})\n\n⚠️ Remember to commit and push this change using commit_and_push_submodule!"
 
     except Exception as e:
         logger.error(f"Error deleting proposal: {e}", exc_info=True)

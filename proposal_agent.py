@@ -523,11 +523,10 @@ def add_user_image_to_yaml(
         data = yaml_lib.safe_load(yaml_content)
 
         if position == "before_first_section":
-            # Add image_before to meta
-            if "meta" not in data:
-                data["meta"] = {}
-            data["meta"]["image_before"] = image_path
-            logger.info(f"Added image_before: {image_path}")
+            # Add image_before to first section
+            if "sections" in data and len(data["sections"]) > 0:
+                data["sections"][0]["image_before"] = image_path
+                logger.info(f"Added image_before to first section: {image_path}")
 
         elif position == "after_presentation":
             # Add to presentation section

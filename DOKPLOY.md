@@ -42,9 +42,13 @@ GITHUB_TOKEN=your_github_personal_access_token
 
 ### 3. Build Settings
 
-- **Build Type**: Dockerfile
+**CRITICAL**: Dokploy may auto-detect Python and use Nixpacks. You MUST force it to use Dockerfile:
+
+- **Builder/Build Type**: Select **"Dockerfile"** (NOT "Nixpacks")
 - **Dockerfile Path**: `./Dockerfile`
 - **Docker Compose**: Optional (can use docker-compose.yml)
+
+**Why this matters**: Nixpacks will NOT install Typst, causing PDF generation to fail. The Dockerfile includes a multi-stage build that copies the Typst binary from the official image.
 
 ### 4. Deploy
 

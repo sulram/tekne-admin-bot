@@ -4,13 +4,20 @@ set -e
 echo "🚀 Tekne Admin Bot - Docker Entrypoint"
 
 # Check if submodule directory exists and needs git initialization
-if [ -d "/app/submodules/tekne-proposals" ] && [ ! -d "/app/submodules/tekne-proposals/.git" ]; then
-    echo "📦 Initializing submodule git repository..."
+if [ -d "/app/submodules/tekne-proposals" ]; then
+    # Remove broken gitlink if it exists (points to non-existent parent .git)
+    if [ -f "/app/submodules/tekne-proposals/.git" ]; then
+        echo "📦 Removing broken gitlink and initializing fresh git repository..."
+        rm -f /app/submodules/tekne-proposals/.git
+    fi
 
-    cd /app/submodules/tekne-proposals
+    # Only initialize if no .git directory exists
+    if [ ! -d "/app/submodules/tekne-proposals/.git" ]; then
+        echo "📦 Initializing submodule git repository..."
+        cd /app/submodules/tekne-proposals
 
-    # Initialize git repository
-    git init
+        # Initialize git repository
+        git init
 
     # Configure git user (required for commits)
     git config user.name "Tekne Admin Bot"
@@ -42,10 +49,13 @@ if [ -d "/app/submodules/tekne-proposals" ] && [ ! -d "/app/submodules/tekne-pro
         git branch -M main
     fi
 
-    cd /app
-    echo "✅ Submodule git initialized"
+        cd /app
+        echo "✅ Submodule git initialized"
+    else
+        echo "ℹ️  Submodule already has .git directory"
+    fi
 else
-    echo "ℹ️  Submodule already has .git directory or doesn't exist"
+    echo "⚠️  Submodule directory not found at /app/submodules/tekne-proposals"
 fi
 
 # Start the bot

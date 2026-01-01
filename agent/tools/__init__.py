@@ -12,7 +12,8 @@ from .proposal import (
     list_existing_proposals,  # Simple function
     update_proposal_field,
     get_proposal_structure,
-    read_section_content
+    read_section_content,
+    delete_proposal,  # @tool decorated
 )
 from .pdf import generate_pdf_from_yaml  # Simple function
 from .image import generate_image_dalle, wait_for_user_image, add_user_image_to_yaml
@@ -30,6 +31,7 @@ __all__ = [
     'update_proposal_field',
     'get_proposal_structure',
     'read_section_content',
+    'delete_proposal',
 
     # PDF tools (simple function)
     'generate_pdf_from_yaml',

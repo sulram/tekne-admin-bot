@@ -34,6 +34,9 @@ _session_state_callback: Optional[Callable[[str, dict], None]] = None
 # Cache for CLAUDE.md instructions (loaded once at startup)
 _cached_instructions: Optional[str] = None
 
+# Cost tracking file
+COST_TRACKING_FILE = Path(__file__).parent / ".cost_tracking.txt"
+
 def set_status_callback(callback: Callable[[str], None]) -> None:
     """Set callback function to send status updates to user"""
     global _status_callback
@@ -53,6 +56,41 @@ def update_session_state(session_id: str, state_updates: dict) -> None:
     """Update user session state if callback is set"""
     if _session_state_callback:
         _session_state_callback(session_id, state_updates)
+
+
+def track_cost(input_tokens: int, output_tokens: int, cost: float) -> None:
+    """Track API costs to a file for monitoring"""
+    try:
+        from datetime import datetime
+
+        # Read existing total
+        total_cost = 0.0
+        total_input_tokens = 0
+        total_output_tokens = 0
+
+        if COST_TRACKING_FILE.exists():
+            with open(COST_TRACKING_FILE, 'r') as f:
+                lines = f.readlines()
+                if len(lines) >= 3:
+                    total_cost = float(lines[0].strip())
+                    total_input_tokens = int(lines[1].strip())
+                    total_output_tokens = int(lines[2].strip())
+
+        # Add current usage
+        total_cost += cost
+        total_input_tokens += input_tokens
+        total_output_tokens += output_tokens
+
+        # Write updated totals
+        with open(COST_TRACKING_FILE, 'w') as f:
+            f.write(f"{total_cost}\n")
+            f.write(f"{total_input_tokens}\n")
+            f.write(f"{total_output_tokens}\n")
+            f.write(f"Last update: {datetime.now().isoformat()}\n")
+
+        logger.info(f"📊 Total accumulated: ${total_cost:.4f} ({total_input_tokens:,} in + {total_output_tokens:,} out)")
+    except Exception as e:
+        logger.warning(f"Could not track cost: {e}")
 
 
 def load_claude_instructions() -> str:
@@ -679,6 +717,24 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     logger.info(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
     logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")
 
+    # Log token usage and cost
+    if hasattr(response, 'metrics') and response.metrics:
+        input_tokens = response.metrics.get('input_tokens', 0)
+        output_tokens = response.metrics.get('output_tokens', 0)
+        total_tokens = input_tokens + output_tokens
+
+        # Claude Sonnet 4.5 pricing (as of Dec 2024)
+        # Input: $3.00 / 1M tokens, Output: $15.00 / 1M tokens
+        input_cost = (input_tokens / 1_000_000) * 3.00
+        output_cost = (output_tokens / 1_000_000) * 15.00
+        total_cost = input_cost + output_cost
+
+        logger.info(f"💰 Token usage: {input_tokens:,} in + {output_tokens:,} out = {total_tokens:,} total")
+        logger.info(f"💵 Cost: ${input_cost:.4f} in + ${output_cost:.4f} out = ${total_cost:.4f} total")
+
+        # Track cumulative cost
+        track_cost(input_tokens, output_tokens, total_cost)
+
     # Log if tools were used and check for missing commit
     tools_used = []
     if hasattr(response, 'messages'):
@@ -696,3 +752,50 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
         send_status("⚠️ Aviso: Proposta salva mas não enviada ao repositório")
 
     return response.content
+
+
+def get_total_cost() -> dict:
+    """Get total accumulated cost and token usage"""
+    if not COST_TRACKING_FILE.exists():
+        return {
+            'total_cost': 0.0,
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'last_update': None
+        }
+
+    try:
+        with open(COST_TRACKING_FILE, 'r') as f:
+            lines = f.readlines()
+            return {
+                'total_cost': float(lines[0].strip()),
+                'input_tokens': int(lines[1].strip()),
+                'output_tokens': int(lines[2].strip()),
+                'last_update': lines[3].strip().replace('Last update: ', '') if len(lines) > 3 else None
+            }
+    except Exception as e:
+        logger.error(f"Error reading cost tracking: {e}")
+        return {
+            'total_cost': 0.0,
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'last_update': None
+        }
+
+
+# CLI utility to check costs
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "cost":
+        stats = get_total_cost()
+        print("\n📊 Total API Usage Statistics")
+        print("=" * 50)
+        print(f"💵 Total Cost: ${stats['total_cost']:.4f}")
+        print(f"📥 Input Tokens: {stats['input_tokens']:,}")
+        print(f"📤 Output Tokens: {stats['output_tokens']:,}")
+        print(f"📊 Total Tokens: {stats['input_tokens'] + stats['output_tokens']:,}")
+        if stats['last_update']:
+            print(f"🕐 Last Update: {stats['last_update']}")
+        print("=" * 50)
+    else:
+        print("Usage: python proposal_agent.py cost")

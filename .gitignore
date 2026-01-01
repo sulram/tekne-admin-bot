@@ -44,3 +44,6 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Cost tracking
+.cost_tracking.txt

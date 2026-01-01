@@ -16,11 +16,23 @@ RUN apt-get update && apt-get install -y \
     gcc \
     python3-dev \
     wget \
+    unzip \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Typst binary from official image
 COPY --from=typst /bin/typst /usr/local/bin/typst
 RUN chmod +x /usr/local/bin/typst && typst --version
+
+# Install Space Grotesk font (required by proposal template)
+RUN mkdir -p /usr/share/fonts/truetype/space-grotesk && \
+    cd /tmp && \
+    wget -q https://github.com/floriankarsten/space-grotesk/releases/download/2.0.0/SpaceGrotesk-2.0.0.zip && \
+    unzip -q SpaceGrotesk-2.0.0.zip -d space-grotesk && \
+    cp space-grotesk/fonts/otf/*.otf /usr/share/fonts/truetype/space-grotesk/ && \
+    fc-cache -fv && \
+    rm -rf /tmp/space-grotesk /tmp/SpaceGrotesk-2.0.0.zip && \
+    echo "✅ Space Grotesk font installed"
 
 # Install uv for faster Python package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

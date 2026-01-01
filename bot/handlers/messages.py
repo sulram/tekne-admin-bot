@@ -50,7 +50,7 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ============================================================================
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text messages - route to proposal agent if session is active"""
+    """Handle text messages - auto-activate agent if needed and route to agent"""
     user_id = await check_auth(update, "text message")
     if user_id is None:
         return
@@ -59,7 +59,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     logger.info(f"User {user_id} sent text: {user_text[:100]}...")
 
-    # Process with agent (validates session internally)
+    # Auto-create session if not active
+    from bot.session import get_session_info
+    has_session, session_id = get_session_info(user_id)
+
+    if not has_session:
+        logger.info(f"Auto-activating agent for user {user_id}")
+        session_id = f"user_{user_id}"
+        create_session(user_id, session_id)
+
+    # Process with agent
     async with AgentProcessor(update, user_id) as processor:
         await processor.process(user_text)
 
@@ -124,7 +133,16 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Show transcription
         await status_msg.edit_text(f"📝 Transcrição:\n{transcription}")
 
-        # Process with agent (validates session internally)
+        # Auto-create session if not active
+        from bot.session import get_session_info
+        has_session, session_id = get_session_info(user_id)
+
+        if not has_session:
+            logger.info(f"Auto-activating agent for user {user_id} (audio)")
+            session_id = f"user_{user_id}"
+            create_session(user_id, session_id)
+
+        # Process with agent
         async with AgentProcessor(update, user_id) as processor:
             await processor.process(transcription)
 

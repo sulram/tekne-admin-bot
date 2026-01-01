@@ -88,8 +88,9 @@ def commit_and_push_submodule(message: str) -> str:
         # Pull from remote with merge (in conflicts, prefer bot's changes)
         # -X ours means: in conflict, keep "our" changes (bot)
         # --no-rebase ensures we use merge, not rebase
+        # --allow-unrelated-histories handles Docker init case
         result = subprocess.run(
-            ["git", "pull", "--no-rebase", "-X", "ours", "origin", "main"],
+            ["git", "pull", "--no-rebase", "--allow-unrelated-histories", "-X", "ours", "origin", "main"],
             capture_output=True,
             text=True
         )

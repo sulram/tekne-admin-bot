@@ -46,6 +46,9 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
 
         elapsed_time = time.time() - start_time
         logger.info(f"⏱️  PDF generation took {elapsed_time:.2f} seconds")
+        logger.info(f"📋 Subprocess returncode: {result.returncode}")
+        logger.info(f"📋 Subprocess stdout: {result.stdout[:200] if result.stdout else 'None'}")
+        logger.info(f"📋 Subprocess stderr: {result.stderr[:200] if result.stderr else 'None'}")
 
         if result.returncode == 0:
             # Find the actual PDF file generated (it may have a different name than the YAML)
@@ -71,6 +74,8 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
             return f"Error generating PDF: {result.stderr}"
 
     except subprocess.TimeoutExpired:
+        logger.error("PDF generation timed out")
         return "Error: PDF generation timed out"
     except Exception as e:
+        logger.error(f"Exception in generate_pdf_from_yaml: {e}", exc_info=True)
         return f"Error: {str(e)}"

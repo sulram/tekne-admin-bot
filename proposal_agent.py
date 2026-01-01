@@ -70,12 +70,24 @@ def load_claude_instructions() -> str:
 ## WORKFLOW - CRITICAL
 
 **MANDATORY STEPS after ANY YAML change:**
-1. Save YAML using `save_proposal_yaml()`
-2. Generate PDF using `generate_pdf_from_yaml()`
-3. **IMMEDIATELY** commit and push using `commit_and_push_submodule()`
+1. Save YAML using `save_proposal_yaml()` → returns file path
+2. Generate PDF using `generate_pdf_from_yaml(yaml_path)`
+3. **IMMEDIATELY** commit using `commit_and_push_submodule(message, files)`
+
+**CRITICAL: How to call commit_and_push_submodule correctly:**
+```python
+# After save_proposal_yaml returns the path (e.g., "docs/2025-12-sesc/proposta-x.yml")
+yaml_path = save_proposal_yaml(...)
+generate_pdf_from_yaml(yaml_path)
+commit_and_push_submodule(
+    message="Update proposal for Client X",
+    files=[yaml_path]  # MUST pass as a list!
+)
+```
 
 **You MUST call `commit_and_push_submodule()` after EVERY proposal creation or edit.**
-- Format: `commit_and_push_submodule("Add/Update proposal for [Client]", ["docs/.../file.yml"])`
+- ALWAYS provide both parameters: `message` AND `files`
+- `files` parameter is a LIST containing the YAML file path
 - Images are auto-detected and included automatically
 - This is NOT optional - ALWAYS do this step
 
@@ -386,18 +398,23 @@ def find_proposal_images(yaml_file_path: str) -> List[str]:
 
 
 @tool
-def commit_and_push_submodule(message: str, files: List[str]) -> str:
+def commit_and_push_submodule(
+    message: str,
+    files: List[str] = []
+) -> str:
     """
-    Commit and push changes to the tekne-proposals submodule
+    Commit and push changes to the tekne-proposals submodule.
+
+    IMPORTANT: You MUST provide the 'files' parameter with a list containing the YAML file path.
 
     Args:
-        message: Commit message (e.g., "Add proposal for Client - Project")
-        files: List of file paths to commit - REQUIRED list with at least one YAML file path.
-               Example: ["docs/2025-12-sesc/proposta-metaverso.yml"]
-               Images are auto-detected from YAML and included automatically.
+        message (str): Commit message (e.g., "Add proposal for Client - Project")
+        files (List[str]): List of file paths to commit. REQUIRED - must contain at least one YAML file.
+                          Example: ["docs/2025-12-sesc/proposta-metaverso.yml"]
+                          Images are auto-detected from YAML and included automatically.
 
     Returns:
-        Result of git operations
+        str: Result of git operations
 
     Example:
         commit_and_push_submodule(
@@ -405,9 +422,16 @@ def commit_and_push_submodule(message: str, files: List[str]) -> str:
             files=["docs/2025-12-sesc/proposta-metaverso.yml"]
         )
     """
-    # Validate files parameter
-    if not files:
-        return "Error: 'files' parameter is required and must contain at least one file path. Example: files=['docs/2025-12-client/proposta.yml']"
+    # Validate files parameter - must be provided
+    if not files or len(files) == 0:
+        error_msg = (
+            "ERROR: 'files' parameter is REQUIRED!\n"
+            "You must provide a list with the YAML file path.\n"
+            "Example: commit_and_push_submodule(message='...', files=['docs/2025-12-sesc/proposta-x.yml'])"
+        )
+        logger.error(error_msg)
+        send_status("❌ Erro: parâmetro 'files' não foi fornecido")
+        return error_msg
 
     if not isinstance(files, list):
         return f"Error: 'files' must be a list of strings. Received: {type(files).__name__}"

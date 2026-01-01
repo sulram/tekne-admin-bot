@@ -25,13 +25,16 @@ COPY --from=typst /bin/typst /usr/local/bin/typst
 RUN chmod +x /usr/local/bin/typst && typst --version
 
 # Install Space Grotesk font (required by proposal template)
-RUN mkdir -p /usr/share/fonts/truetype/space-grotesk && \
+# Typst uses ~/.local/share/fonts for user fonts
+RUN mkdir -p /root/.local/share/fonts/space-grotesk && \
     cd /tmp && \
     wget -q https://github.com/floriankarsten/space-grotesk/releases/download/2.0.0/SpaceGrotesk-2.0.0.zip && \
     unzip -q SpaceGrotesk-2.0.0.zip -d space-grotesk && \
-    cp space-grotesk/fonts/otf/*.otf /usr/share/fonts/truetype/space-grotesk/ && \
+    find space-grotesk -name "*.otf" -exec cp {} /root/.local/share/fonts/space-grotesk/ \; && \
+    find space-grotesk -name "*.ttf" -exec cp {} /root/.local/share/fonts/space-grotesk/ \; && \
     fc-cache -fv && \
     rm -rf /tmp/space-grotesk /tmp/SpaceGrotesk-2.0.0.zip && \
+    ls -lah /root/.local/share/fonts/space-grotesk/ && \
     echo "✅ Space Grotesk font installed"
 
 # Install uv for faster Python package management

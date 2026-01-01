@@ -1,4 +1,4 @@
 [submodule "submodules/tekne-proposals"]
 	path = submodules/tekne-proposals
-	url = https://github.com/tekne-studio/tekne-proposals.git
-	# For Dokploy: configure GitHub token in repository settings
+	url = ../tekne-proposals.git
+	# Relative URL inherits parent repo's authentication in Dokploy

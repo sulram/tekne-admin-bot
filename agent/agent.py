@@ -19,6 +19,7 @@ from agent.tools import (
     update_proposal_field,
     get_proposal_structure,
     read_section_content,
+    delete_proposal,
     generate_pdf_from_yaml_tool,  # @tool decorated version for agent
     generate_image_dalle,
     wait_for_user_image,
@@ -204,6 +205,7 @@ proposal_agent = Agent(
         update_proposal_field,
         get_proposal_structure,
         read_section_content,
+        delete_proposal,
         generate_pdf_from_yaml_tool,  # Agent uses @tool decorated version
         generate_image_dalle,
         wait_for_user_image,

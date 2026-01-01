@@ -15,11 +15,11 @@ from core.cost_tracking import track_cost
 from agent.tools import (
     save_proposal_yaml,
     load_proposal_yaml,
-    list_existing_proposals,
+    list_existing_proposals_tool,  # @tool decorated version for agent
     update_proposal_field,
     get_proposal_structure,
     read_section_content,
-    generate_pdf_from_yaml,
+    generate_pdf_from_yaml_tool,  # @tool decorated version for agent
     generate_image_dalle,
     wait_for_user_image,
     add_user_image_to_yaml,
@@ -204,12 +204,12 @@ proposal_agent = Agent(
         update_proposal_field,
         get_proposal_structure,
         read_section_content,
-        generate_pdf_from_yaml,
+        generate_pdf_from_yaml_tool,  # Agent uses @tool decorated version
         generate_image_dalle,
         wait_for_user_image,
         add_user_image_to_yaml,
         commit_and_push_submodule,
-        list_existing_proposals,
+        list_existing_proposals_tool,  # Agent uses @tool decorated version
         load_proposal_yaml,
     ],
     add_history_to_context=True,

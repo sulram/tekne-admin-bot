@@ -13,10 +13,10 @@ from core.callbacks import send_status
 logger = logging.getLogger(__name__)
 
 
-@tool
-def generate_pdf_from_yaml(yaml_file_path: str) -> str:
+def _generate_pdf_impl(yaml_file_path: str) -> str:
     """
-    Generate PDF from YAML using the proposal script
+    Internal implementation: Generate PDF from YAML using the proposal script
+    This is the actual function that does the work, callable from anywhere.
 
     Args:
         yaml_file_path: Relative path to YAML file from submodule root
@@ -29,8 +29,11 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
     if not yaml_full_path.exists():
         return f"Error: YAML file not found: {yaml_file_path}"
 
-    # Send status to user
-    send_status("🔨 Gerando o PDF da proposta...")
+    # Send status to user (only if callback is available)
+    try:
+        send_status("🔨 Gerando o PDF da proposta...")
+    except:
+        pass  # Ignore if no callback context
 
     # Run ./proposal script
     try:
@@ -84,5 +87,24 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
         logger.error("PDF generation timed out")
         return "Error: PDF generation timed out"
     except Exception as e:
-        logger.error(f"Exception in generate_pdf_from_yaml: {e}", exc_info=True)
+        logger.error(f"Exception in _generate_pdf_impl: {e}", exc_info=True)
         return f"Error: {str(e)}"
+
+
+# Simple function for direct use (bot commands, etc)
+generate_pdf_from_yaml = _generate_pdf_impl
+
+
+# Agent-compatible wrapper with @tool decorator
+@tool
+def generate_pdf_from_yaml_tool(yaml_file_path: str) -> str:
+    """
+    Generate PDF from YAML using the proposal script (Agent tool wrapper)
+
+    Args:
+        yaml_file_path: Relative path to YAML file from submodule root
+
+    Returns:
+        Path to generated PDF file
+    """
+    return _generate_pdf_impl(yaml_file_path)

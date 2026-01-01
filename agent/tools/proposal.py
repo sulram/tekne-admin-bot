@@ -455,10 +455,10 @@ def read_section_content(
         return f"Error: {str(e)}"
 
 
-@tool
-def list_existing_proposals(limit: int = 10) -> str:
+def _list_proposals_impl(limit: int = 10) -> str:
     """
-    List existing proposals in docs/ directory, sorted by date (most recent first)
+    Internal implementation: List existing proposals in docs/ directory
+    This is the actual function that does the work, callable from anywhere.
 
     Args:
         limit: Maximum number of proposals to return (default: 10)
@@ -510,3 +510,22 @@ def list_existing_proposals(limit: int = 10) -> str:
         formatted.append(f"{i}. 📄 {p['path']}\n   Cliente: {p['client']}\n   Título: {p['title']}\n   Data: {p['date']}")
 
     return f"Propostas mais recentes ({len(proposals)}):\n\n" + "\n\n".join(formatted)
+
+
+# Simple function for direct use (bot commands, etc)
+list_existing_proposals = _list_proposals_impl
+
+
+# Agent-compatible wrapper with @tool decorator
+@tool
+def list_existing_proposals_tool(limit: int = 10) -> str:
+    """
+    List existing proposals in docs/ directory, sorted by date (Agent tool wrapper)
+
+    Args:
+        limit: Maximum number of proposals to return (default: 10)
+
+    Returns:
+        Formatted list of proposals with their paths
+    """
+    return _list_proposals_impl(limit)

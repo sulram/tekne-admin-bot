@@ -11,13 +11,8 @@ from bot.auth import check_auth
 from bot.session import clear_session
 from core.cost_tracking import get_cost_stats, reset_cost_tracking
 from agent.agent import reset_agent_session
-from agent.tools.proposal import list_existing_proposals as _list_proposals_tool
-from agent.tools.pdf import generate_pdf_from_yaml as _generate_pdf_tool
+from agent.tools import list_existing_proposals, generate_pdf_from_yaml  # Simple functions (not @tool decorated)
 from config import SUBMODULE_PATH
-
-# Unwrap the Agno @tool decorators to get the actual functions
-list_existing_proposals = _list_proposals_tool.function if hasattr(_list_proposals_tool, 'function') else _list_proposals_tool
-generate_pdf_from_yaml = _generate_pdf_tool.function if hasattr(_generate_pdf_tool, 'function') else _generate_pdf_tool
 
 logger = logging.getLogger(__name__)
 

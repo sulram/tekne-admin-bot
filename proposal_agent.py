@@ -58,39 +58,76 @@ def update_session_state(session_id: str, state_updates: dict) -> None:
         _session_state_callback(session_id, state_updates)
 
 
-def track_cost(input_tokens: int, output_tokens: int, cost: float) -> None:
-    """Track API costs to a file for monitoring"""
+def track_cost(input_tokens: int, output_tokens: int, cost: float, session_id: str = "default") -> dict:
+    """Track API costs to a file for monitoring
+
+    Returns:
+        dict with 'this_request', 'session', 'today', 'total' cost info
+    """
     try:
         from datetime import datetime
+        import json
 
-        # Read existing total
-        total_cost = 0.0
-        total_input_tokens = 0
-        total_output_tokens = 0
+        # Read existing data
+        data = {
+            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0},
+            'sessions': {},
+            'daily': {},
+            'last_update': None
+        }
 
         if COST_TRACKING_FILE.exists():
-            with open(COST_TRACKING_FILE, 'r') as f:
-                lines = f.readlines()
-                if len(lines) >= 3:
-                    total_cost = float(lines[0].strip())
-                    total_input_tokens = int(lines[1].strip())
-                    total_output_tokens = int(lines[2].strip())
+            try:
+                with open(COST_TRACKING_FILE, 'r') as f:
+                    data = json.load(f)
+            except:
+                pass  # If file is corrupted, start fresh
 
-        # Add current usage
-        total_cost += cost
-        total_input_tokens += input_tokens
-        total_output_tokens += output_tokens
+        # Update totals
+        data['total']['cost'] += cost
+        data['total']['input_tokens'] += input_tokens
+        data['total']['output_tokens'] += output_tokens
 
-        # Write updated totals
+        # Update session totals
+        if session_id not in data['sessions']:
+            data['sessions'][session_id] = {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0, 'requests': 0}
+        data['sessions'][session_id]['cost'] += cost
+        data['sessions'][session_id]['input_tokens'] += input_tokens
+        data['sessions'][session_id]['output_tokens'] += output_tokens
+        data['sessions'][session_id]['requests'] += 1
+
+        # Update daily totals
+        today = datetime.now().strftime('%Y-%m-%d')
+        if today not in data['daily']:
+            data['daily'][today] = {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0, 'requests': 0}
+        data['daily'][today]['cost'] += cost
+        data['daily'][today]['input_tokens'] += input_tokens
+        data['daily'][today]['output_tokens'] += output_tokens
+        data['daily'][today]['requests'] += 1
+
+        data['last_update'] = datetime.now().isoformat()
+
+        # Write updated data
         with open(COST_TRACKING_FILE, 'w') as f:
-            f.write(f"{total_cost}\n")
-            f.write(f"{total_input_tokens}\n")
-            f.write(f"{total_output_tokens}\n")
-            f.write(f"Last update: {datetime.now().isoformat()}\n")
+            json.dump(data, f, indent=2)
 
-        logger.info(f"📊 Total accumulated: ${total_cost:.4f} ({total_input_tokens:,} in + {total_output_tokens:,} out)")
+        logger.info(f"📊 Session {session_id}: ${cost:.4f} | Today: ${data['daily'][today]['cost']:.4f} | Total: ${data['total']['cost']:.4f}")
+
+        # Return cost info for display
+        return {
+            'this_request': cost,
+            'session': data['sessions'][session_id]['cost'],
+            'today': data['daily'][today]['cost'],
+            'total': data['total']['cost']
+        }
     except Exception as e:
         logger.warning(f"Could not track cost: {e}")
+        return {
+            'this_request': cost,
+            'session': 0.0,
+            'today': 0.0,
+            'total': 0.0
+        }
 
 
 def load_claude_instructions() -> str:
@@ -468,6 +505,24 @@ def commit_and_push_submodule(message: str) -> str:
 
         send_status("📤 Enviando para o repositório...")
 
+        # Ensure we're on main branch (fix detached HEAD state)
+        try:
+            branch_result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            current_branch = branch_result.stdout.strip()
+            logger.info(f"Current branch: {current_branch}")
+
+            if current_branch == "HEAD":  # Detached HEAD state
+                logger.info("Detached HEAD detected, checking out main branch...")
+                subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+                logger.info("✓ Checked out main branch")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Could not check/fix branch state: {e.stderr}")
+
         # Add all changes
         subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
         logger.info("✓ Added all changes (git add .)")
@@ -718,9 +773,12 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")
 
     # Log token usage and cost
+    cost_info = None
+    pdf_generated = False
     if hasattr(response, 'metrics') and response.metrics:
-        input_tokens = response.metrics.get('input_tokens', 0)
-        output_tokens = response.metrics.get('output_tokens', 0)
+        # Metrics is an object, not a dict - use attribute access
+        input_tokens = getattr(response.metrics, 'input_tokens', 0)
+        output_tokens = getattr(response.metrics, 'output_tokens', 0)
         total_tokens = input_tokens + output_tokens
 
         # Claude Sonnet 4.5 pricing (as of Dec 2024)
@@ -733,7 +791,7 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
         logger.info(f"💵 Cost: ${input_cost:.4f} in + ${output_cost:.4f} out = ${total_cost:.4f} total")
 
         # Track cumulative cost
-        track_cost(input_tokens, output_tokens, total_cost)
+        cost_info = track_cost(input_tokens, output_tokens, total_cost, session_id)
 
     # Log if tools were used and check for missing commit
     tools_used = []
@@ -746,56 +804,172 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
                             tools_used.append(block.name)
                             logger.info(f"[Session {session_id}] Tool used: {block.name}")
 
+    # Check if PDF was generated
+    pdf_generated = 'generate_pdf_from_yaml' in tools_used
+
     # Check if agent modified proposal but didn't commit
     if 'save_proposal_yaml' in tools_used and 'commit_and_push_submodule' not in tools_used:
         logger.warning(f"⚠️  [Session {session_id}] Agent saved YAML but did NOT commit to git!")
         send_status("⚠️ Aviso: Proposta salva mas não enviada ao repositório")
 
+    # Send cost info if PDF was generated
+    if pdf_generated and cost_info:
+        cost_msg = (
+            f"💰 _Custo desta requisição:_ `${cost_info['this_request']:.4f}`\n"
+            f"📊 _Sessão:_ `${cost_info['session']:.4f}` | "
+            f"_Hoje:_ `${cost_info['today']:.4f}` | "
+            f"_Total:_ `${cost_info['total']:.4f}`"
+        )
+        send_status(cost_msg)
+
     return response.content
 
 
-def get_total_cost() -> dict:
-    """Get total accumulated cost and token usage"""
+def get_cost_stats() -> dict:
+    """Get cost statistics"""
+    import json
+
     if not COST_TRACKING_FILE.exists():
         return {
-            'total_cost': 0.0,
-            'input_tokens': 0,
-            'output_tokens': 0,
+            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0},
+            'sessions': {},
+            'daily': {},
             'last_update': None
         }
 
     try:
         with open(COST_TRACKING_FILE, 'r') as f:
-            lines = f.readlines()
-            return {
-                'total_cost': float(lines[0].strip()),
-                'input_tokens': int(lines[1].strip()),
-                'output_tokens': int(lines[2].strip()),
-                'last_update': lines[3].strip().replace('Last update: ', '') if len(lines) > 3 else None
-            }
+            return json.load(f)
     except Exception as e:
         logger.error(f"Error reading cost tracking: {e}")
         return {
-            'total_cost': 0.0,
-            'input_tokens': 0,
-            'output_tokens': 0,
+            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0},
+            'sessions': {},
+            'daily': {},
             'last_update': None
         }
+
+
+def reset_cost_tracking(scope: str = "all", session_id: str = None) -> None:
+    """Reset cost tracking
+
+    Args:
+        scope: What to reset - "all", "daily", "sessions", or "session"
+        session_id: Specific session ID to reset (when scope="session")
+    """
+    import json
+
+    if scope == "all":
+        # Delete the file completely
+        if COST_TRACKING_FILE.exists():
+            COST_TRACKING_FILE.unlink()
+        logger.info("✅ All cost tracking data reset")
+    elif scope == "session" and session_id:
+        # Reset only a specific session
+        data = get_cost_stats()
+        if session_id in data['sessions']:
+            del data['sessions'][session_id]
+            logger.info(f"✅ Session {session_id} cost tracking reset")
+            with open(COST_TRACKING_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+    else:
+        data = get_cost_stats()
+
+        if scope == "daily":
+            data['daily'] = {}
+            logger.info("✅ Daily cost tracking reset")
+        elif scope == "sessions":
+            data['sessions'] = {}
+            logger.info("✅ Session cost tracking reset")
+
+        with open(COST_TRACKING_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+
+
+def reset_agent_session(session_id: str) -> bool:
+    """Reset agent conversation history for a specific session
+
+    Args:
+        session_id: Session ID to reset
+
+    Returns:
+        bool: True if session was deleted, False otherwise
+    """
+    try:
+        result = proposal_agent.db.delete_session(session_id)
+        if result:
+            logger.info(f"✅ Agent session {session_id} history cleared")
+        else:
+            logger.info(f"ℹ️ No session history found for {session_id}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error clearing agent session {session_id}: {e}")
+        return False
 
 
 # CLI utility to check costs
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "cost":
-        stats = get_total_cost()
-        print("\n📊 Total API Usage Statistics")
-        print("=" * 50)
-        print(f"💵 Total Cost: ${stats['total_cost']:.4f}")
-        print(f"📥 Input Tokens: {stats['input_tokens']:,}")
-        print(f"📤 Output Tokens: {stats['output_tokens']:,}")
-        print(f"📊 Total Tokens: {stats['input_tokens'] + stats['output_tokens']:,}")
-        if stats['last_update']:
-            print(f"🕐 Last Update: {stats['last_update']}")
-        print("=" * 50)
+    from datetime import datetime
+
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+
+        if command == "cost":
+            stats = get_cost_stats()
+            total = stats['total']
+            daily = stats['daily']
+            sessions = stats['sessions']
+
+            print("\n📊 API Usage Statistics")
+            print("=" * 60)
+
+            # Total
+            print(f"\n💵 TOTAL (all time)")
+            print(f"   Cost: ${total['cost']:.4f}")
+            print(f"   Tokens: {total['input_tokens']:,} in + {total['output_tokens']:,} out = {total['input_tokens'] + total['output_tokens']:,}")
+
+            # Today
+            today = datetime.now().strftime('%Y-%m-%d')
+            if today in daily:
+                d = daily[today]
+                print(f"\n📅 TODAY ({today})")
+                print(f"   Cost: ${d['cost']:.4f}")
+                print(f"   Requests: {d['requests']}")
+                print(f"   Tokens: {d['input_tokens']:,} in + {d['output_tokens']:,} out")
+
+            # Recent days
+            if len(daily) > 1:
+                print(f"\n📆 LAST 7 DAYS")
+                for day in sorted(daily.keys(), reverse=True)[:7]:
+                    d = daily[day]
+                    print(f"   {day}: ${d['cost']:.4f} ({d['requests']} req)")
+
+            # Sessions
+            if sessions:
+                print(f"\n👥 TOP SESSIONS")
+                sorted_sessions = sorted(sessions.items(), key=lambda x: x[1]['cost'], reverse=True)[:5]
+                for sess_id, s in sorted_sessions:
+                    print(f"   {sess_id}: ${s['cost']:.4f} ({s['requests']} req)")
+
+            if stats['last_update']:
+                print(f"\n🕐 Last Update: {stats['last_update']}")
+            print("=" * 60)
+
+        elif command == "reset":
+            scope = sys.argv[2] if len(sys.argv) > 2 else "all"
+            if scope in ["all", "daily", "sessions"]:
+                reset_cost_tracking(scope)
+            else:
+                print(f"Invalid scope: {scope}")
+                print("Usage: python proposal_agent.py reset [all|daily|sessions]")
+
+        else:
+            print(f"Unknown command: {command}")
+            print("Usage:")
+            print("  python proposal_agent.py cost              # Show statistics")
+            print("  python proposal_agent.py reset [scope]     # Reset tracking")
     else:
-        print("Usage: python proposal_agent.py cost")
+        print("Usage:")
+        print("  python proposal_agent.py cost              # Show statistics")
+        print("  python proposal_agent.py reset [scope]     # Reset tracking")

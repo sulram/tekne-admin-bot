@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
-from proposal_agent import get_agent_response, set_status_callback, set_session_state_callback
+from proposal_agent import get_agent_response, set_status_callback, set_session_state_callback, get_cost_stats, reset_cost_tracking, reset_agent_session
 import httpcore
 from anthropic import APIConnectionError, APITimeoutError
 
@@ -63,6 +63,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 Available commands:
 /hello - Greet the bot
 /help - Show this help message
+/cost - Show API usage statistics
 /proposal - Start creating a new proposal
 /reset - Reset current proposal conversation
 
@@ -110,14 +111,89 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Reset proposal generation session"""
+    """Reset proposal generation session and cost tracking for this user"""
     user_id = update.effective_user.id
+    session_id = f"user_{user_id}"
 
     with user_sessions_lock:
         if user_id in user_sessions:
             del user_sessions[user_id]
 
-    await update.message.reply_text("✅ Sessão resetada! Use /proposal para começar uma nova proposta.")
+    # Reset agent conversation history for this session
+    reset_agent_session(session_id)
+
+    # Reset cost tracking for this user's session
+    reset_cost_tracking(scope="session", session_id=session_id)
+
+    await update.message.reply_text("✅ Sessão e custos resetados! Use /proposal para começar uma nova proposta.")
+
+
+async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show API usage and cost statistics"""
+    user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized cost command from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
+    try:
+        stats = get_cost_stats()
+        total = stats['total']
+        daily = stats['daily']
+        sessions = stats['sessions']
+
+        from datetime import datetime
+
+        # Build response message
+        message = "📊 *Estatísticas de Uso da API*\n"
+        message += "=" * 35 + "\n\n"
+
+        # Total
+        message += f"💵 *TOTAL (all time)*\n"
+        message += f"   Custo: `${total['cost']:.4f}`\n"
+        total_tokens = total['input_tokens'] + total['output_tokens']
+        message += f"   Tokens: `{total['input_tokens']:,}` in + `{total['output_tokens']:,}` out = `{total_tokens:,}`\n\n"
+
+        # Today
+        today = datetime.now().strftime('%Y-%m-%d')
+        if today in daily:
+            d = daily[today]
+            message += f"📅 *HOJE* ({today})\n"
+            message += f"   Custo: `${d['cost']:.4f}`\n"
+            message += f"   Requisições: `{d['requests']}`\n"
+            message += f"   Tokens: `{d['input_tokens']:,}` in + `{d['output_tokens']:,}` out\n\n"
+
+        # Recent days
+        if len(daily) > 1:
+            message += f"📆 *ÚLTIMOS 7 DIAS*\n"
+            for day in sorted(daily.keys(), reverse=True)[:7]:
+                d = daily[day]
+                message += f"   `{day}`: ${d['cost']:.4f} ({d['requests']} req)\n"
+            message += "\n"
+
+        # User's session
+        session_id = f"user_{user_id}"
+        if session_id in sessions:
+            s = sessions[session_id]
+            message += f"👤 *SUA SESSÃO*\n"
+            message += f"   Custo: `${s['cost']:.4f}`\n"
+            message += f"   Requisições: `{s['requests']}`\n"
+            message += f"   Tokens: `{s['input_tokens']:,}` in + `{s['output_tokens']:,}` out\n\n"
+
+        # Last update
+        if stats['last_update']:
+            last_update_str = stats['last_update'][:19]  # Remove microseconds
+            message += f"🕐 Última atualização: `{last_update_str}`\n"
+
+        message += "=" * 35
+
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    except Exception as e:
+        logger.error(f"Error getting cost stats: {str(e)}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao obter estatísticas: {str(e)}")
 
 
 async def show_progress(status_msg) -> None:
@@ -789,8 +865,9 @@ async def post_init(application) -> None:
     commands = [
         BotCommand("hello", "Saudar o bot"),
         BotCommand("help", "Mostrar comandos disponíveis"),
+        BotCommand("cost", "Mostrar estatísticas de uso da API"),
         BotCommand("proposal", "Criar nova proposta comercial"),
-        BotCommand("reset", "Resetar conversa atual"),
+        BotCommand("reset", "Resetar conversa e custos da sessão"),
     ]
     try:
         await application.bot.set_my_commands(commands)
@@ -805,6 +882,7 @@ app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).post_init(post
 # Command handlers
 app.add_handler(CommandHandler("hello", hello))
 app.add_handler(CommandHandler("help", help_command))
+app.add_handler(CommandHandler("cost", cost_command))
 app.add_handler(CommandHandler("proposal", start_proposal))
 app.add_handler(CommandHandler("reset", reset_proposal))
 

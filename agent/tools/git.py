@@ -86,7 +86,7 @@ def commit_and_push_submodule(message: str) -> str:
         logger.info("Syncing with remote (pull with merge)...")
         try:
             result = subprocess.run(
-                ["git", "pull", "--no-rebase", "origin", "main"],
+                ["git", "pull", "--no-rebase", "--allow-unrelated-histories", "origin", "main"],
                 check=True,
                 capture_output=True,
                 text=True

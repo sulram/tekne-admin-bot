@@ -144,6 +144,126 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 
 
 @tool
+def update_proposal_field(
+    yaml_file_path: str,
+    field_path: str,
+    new_value: str | list | dict
+) -> str:
+    """
+    Update a specific field in a proposal YAML without rewriting the entire file.
+
+    This is ideal for granular edits like fixing typos, updating a section title,
+    or modifying specific bullet points.
+
+    Args:
+        yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
+        field_path: Dot notation path to field (examples below)
+        new_value: New value for the field (string, list, or dict)
+
+    Field path examples:
+        - "meta.title" → Update proposal title
+        - "meta.client" → Update client name
+        - "meta.date" → Update date
+        - "sections[0].title" → Update first section's title
+        - "sections[1].content" → Update second section's content
+        - "sections[0].bullets" → Update entire bullets list
+        - "sections[0].bullets[2]" → Update third bullet point
+        - "sections[0].image" → Update section image path
+
+    Returns:
+        Success message or error
+    """
+    yaml_full_path = SUBMODULE_PATH / yaml_file_path
+
+    if not yaml_full_path.exists():
+        return f"Error: File not found: {yaml_file_path}"
+
+    try:
+        logger.info(f"🎯 update_proposal_field called:")
+        logger.info(f"   File: {yaml_file_path}")
+        logger.info(f"   Field: {field_path}")
+        logger.info(f"   New value type: {type(new_value).__name__}")
+
+        # Load existing YAML
+        with open(yaml_full_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+
+        # Parse field path (e.g., "sections[0].title" or "meta.client")
+        parts = []
+        current = ""
+        in_bracket = False
+
+        for char in field_path:
+            if char == '[':
+                if current:
+                    parts.append(current)
+                    current = ""
+                in_bracket = True
+            elif char == ']':
+                if current:
+                    parts.append(int(current))
+                    current = ""
+                in_bracket = False
+            elif char == '.' and not in_bracket:
+                if current:
+                    parts.append(current)
+                    current = ""
+            else:
+                current += char
+
+        if current:
+            parts.append(current)
+
+        # Navigate to parent and update
+        if not parts:
+            return "Error: Empty field path"
+
+        # Navigate to the field
+        target = data
+        for i, part in enumerate(parts[:-1]):
+            if isinstance(part, int):
+                if not isinstance(target, list):
+                    return f"Error: Expected list at {'.'.join(map(str, parts[:i]))}"
+                if part >= len(target):
+                    return f"Error: Index {part} out of range at {'.'.join(map(str, parts[:i]))}"
+                target = target[part]
+            else:
+                if not isinstance(target, dict):
+                    return f"Error: Expected dict at {'.'.join(map(str, parts[:i]))}"
+                if part not in target:
+                    return f"Error: Key '{part}' not found at {'.'.join(map(str, parts[:i]))}"
+                target = target[part]
+
+        # Update the final field
+        final_key = parts[-1]
+        if isinstance(final_key, int):
+            if not isinstance(target, list):
+                return f"Error: Expected list for index access"
+            if final_key >= len(target):
+                return f"Error: Index {final_key} out of range"
+            target[final_key] = new_value
+        else:
+            if not isinstance(target, dict):
+                return f"Error: Expected dict for key access"
+            target[final_key] = new_value
+
+        # Save back to file
+        with open(yaml_full_path, 'w', encoding='utf-8') as f:
+            yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+        logger.info(f"✅ Successfully updated field in YAML:")
+        logger.info(f"   Path: {field_path}")
+        logger.info(f"   File: {yaml_file_path}")
+        send_status(f"✏️ Atualizei o campo '{field_path}'!")
+
+        return f"✅ Successfully updated {field_path} in {yaml_file_path}"
+
+    except Exception as e:
+        logger.error(f"Error updating field: {e}")
+        return f"Error: {str(e)}"
+
+
+@tool
 def list_existing_proposals(limit: int = 10) -> str:
     """
     List existing proposals in docs/ directory, sorted by date (most recent first)

@@ -16,6 +16,7 @@ from agent.tools import (
     save_proposal_yaml,
     load_proposal_yaml,
     list_existing_proposals,
+    update_proposal_field,
     generate_pdf_from_yaml,
     generate_image_dalle,
     wait_for_user_image,
@@ -77,9 +78,26 @@ commit_and_push_submodule("Update proposal for Client X")
 - `list_existing_proposals(limit)` returns most recent proposals (default: 10)
 - Sorted by date (YYYY-MM prefix) in descending order
 
-**Editing proposals:**
-- User can request to edit by number (from list) or by name/client
-- Use `load_proposal_yaml(path)` to load existing proposal
+**Editing proposals - CHOOSE THE RIGHT TOOL:**
+
+**Option 1: Granular edits (PREFERRED for small changes):**
+- Use `update_proposal_field(yaml_path, field_path, new_value)` for:
+  - Fixing typos in titles or content
+  - Updating a single bullet point
+  - Changing meta fields (title, client, date)
+  - Any small, targeted change
+- Examples:
+  - `update_proposal_field("docs/2026-01-client/proposta.yml", "meta.title", "New Title")`
+  - `update_proposal_field("docs/2026-01-client/proposta.yml", "sections[1].bullets[0]", "New bullet text")`
+  - `update_proposal_field("docs/2026-01-client/proposta.yml", "sections[0].title", "New Section Title")`
+- **Benefits**: Faster, uses fewer tokens, more precise
+
+**Option 2: Full rewrite (only for major changes):**
+- Use `load_proposal_yaml()` + `save_proposal_yaml()` for:
+  - Complete section rewrites
+  - Major restructuring
+  - Adding/removing entire sections
+- **Only use this when user explicitly asks for major changes**
 
 **PDF regeneration:**
 - When user asks for PDF only ("cadê o PDF?"): list → find → generate (no YAML changes)
@@ -129,6 +147,7 @@ proposal_agent = Agent(
     instructions=load_claude_instructions(),
     tools=[
         save_proposal_yaml,
+        update_proposal_field,
         generate_pdf_from_yaml,
         generate_image_dalle,
         wait_for_user_image,

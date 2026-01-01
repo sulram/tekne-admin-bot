@@ -10,7 +10,7 @@ from agno.models.anthropic import Claude
 from agno.db.in_memory import InMemoryDb
 
 from config import CLAUDE_MD_PATH, CLAUDE_INPUT_PRICE_PER_1M, CLAUDE_OUTPUT_PRICE_PER_1M
-from core.callbacks import send_status
+from core.callbacks import send_status, set_current_session
 from core.cost_tracking import track_cost
 from agent.tools import (
     save_proposal_yaml,
@@ -151,10 +151,17 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     """
     logger.info(f"[Session {session_id}] User message: {message[:100]}...")
 
-    # Time the API call
-    start_time = time.time()
-    response = proposal_agent.run(message, session_id=session_id, stream=False)
-    elapsed_time = time.time() - start_time
+    # Bind session to current thread (for ThreadLocal callback routing)
+    set_current_session(session_id)
+
+    try:
+        # Time the API call
+        start_time = time.time()
+        response = proposal_agent.run(message, session_id=session_id, stream=False)
+        elapsed_time = time.time() - start_time
+    finally:
+        # Clear session binding
+        set_current_session(None)
 
     logger.info(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
     logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")

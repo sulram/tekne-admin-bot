@@ -19,7 +19,7 @@ from anthropic import APIConnectionError, APITimeoutError
 from config import OPENAI_API_KEY, SUBMODULE_PATH, ALLOWED_USERS
 from bot.auth import is_user_allowed
 from bot.utils import send_long_message, show_progress
-from core.callbacks import set_status_callback, set_session_state_callback
+from core.callbacks import set_status_callback, set_session_state_callback, clear_session_callbacks
 from core.cost_tracking import get_cost_stats, reset_cost_tracking
 from agent.agent import get_agent_response, reset_agent_session
 
@@ -308,8 +308,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     user_sessions[user_id].update(state_updates)
                     logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
 
-        set_status_callback(status_callback)
-        set_session_state_callback(session_state_callback)
+        set_status_callback(session_id, status_callback)
+        set_session_state_callback(session_id, session_state_callback)
 
         # Start progress indicator task
         logger.info("Starting progress indicator")
@@ -365,9 +365,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 await update.message.reply_text(f"❌ Erro: {str(e)}")
         finally:
-            # Clear status callback
-            set_status_callback(None)
-            set_session_state_callback(None)
+            # Clear session callbacks
+            clear_session_callbacks(session_id)
     else:
         # No active session - suggest starting one
         await update.message.reply_text(
@@ -511,8 +510,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     user_sessions[user_id].update(state_updates)
                     logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
 
-        set_status_callback(status_callback)
-        set_session_state_callback(session_state_callback_for_image)
+        set_status_callback(session_id, status_callback)
+        set_session_state_callback(session_id, session_state_callback_for_image)
 
         # Start progress indicator
         progress_task = asyncio.create_task(show_progress(processing_msg))
@@ -552,8 +551,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(f"❌ Erro ao processar: {str(e)}")
         finally:
             # Clear callbacks
-            set_status_callback(None)
-            set_session_state_callback(None)
+            clear_session_callbacks(session_id)
 
     except Exception as e:
         logger.error(f"Error handling photo: {str(e)}", exc_info=True)
@@ -689,8 +687,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         user_sessions[user_id].update(state_updates)
                         logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
 
-            set_status_callback(status_callback)
-            set_session_state_callback(session_state_callback)
+            set_status_callback(session_id, status_callback)
+            set_session_state_callback(session_id, session_state_callback)
 
             # Start progress indicator task
             progress_task = asyncio.create_task(show_progress(processing_msg))
@@ -741,8 +739,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     await update.message.reply_text(f"❌ Erro: {str(e)}")
             finally:
                 # Clear status callback
-                set_status_callback(None)
-                set_session_state_callback(None)
+                clear_session_callbacks(session_id)
         else:
             # No active session - just show transcription
             await status_msg.edit_text(f"📝 Transcrição:\n\n{transcription}")

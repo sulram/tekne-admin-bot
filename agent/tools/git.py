@@ -82,22 +82,47 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Pull with merge to sync with remote (preserves history)
-        logger.info("Syncing with remote (pull with merge)...")
-        try:
-            result = subprocess.run(
-                ["git", "pull", "--no-rebase", "--allow-unrelated-histories", "origin", "main"],
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Git pull output: {result.stdout if result.stdout else result.stderr}")
-        except subprocess.CalledProcessError as e:
-            # If pull fails, log warning but continue (will be handled by push)
-            logger.warning(f"Git pull failed: {e.stderr}")
-            # Pull failure is not fatal - push will handle it
+        # Sync with remote using stash + reset + apply strategy
+        logger.info("Syncing with remote (stash + reset + apply)...")
 
-        # Normal push (set upstream automatically if needed)
+        # Step 1: Stash local commit (includes new commit we just made)
+        logger.info("Stashing local changes...")
+        subprocess.run(["git", "reset", "HEAD~1"], capture_output=True)  # Undo commit but keep changes
+        subprocess.run(["git", "stash", "push", "-u", "-m", f"Auto-stash: {message}"], capture_output=True)
+
+        # Step 2: Fetch and reset to origin/main
+        logger.info("Fetching and resetting to origin/main...")
+        subprocess.run(["git", "fetch", "origin", "main"], check=True, capture_output=True)
+        subprocess.run(["git", "reset", "--hard", "origin/main"], check=True, capture_output=True)
+
+        # Step 3: Apply stashed changes (accept all incoming in case of conflict)
+        logger.info("Applying stashed changes...")
+        stash_result = subprocess.run(
+            ["git", "stash", "pop"],
+            capture_output=True,
+            text=True
+        )
+
+        # If stash pop had conflicts, accept all "ours" (incoming = our changes)
+        if stash_result.returncode != 0:
+            logger.warning("Stash pop had conflicts, accepting our changes...")
+            # Accept all our changes
+            subprocess.run(["git", "checkout", "--ours", "."], capture_output=True)
+            subprocess.run(["git", "add", "."], capture_output=True)
+            # Clear stash
+            subprocess.run(["git", "stash", "drop"], capture_output=True)
+
+        # Step 4: Commit the changes
+        logger.info(f"Committing synced changes: {message}")
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        logger.info(f"Git commit output: {result.stdout}")
+
+        # Step 5: Push to remote
         logger.info("Pushing to remote...")
         result = subprocess.run(
             ["git", "push", "--set-upstream", "origin", "main"],

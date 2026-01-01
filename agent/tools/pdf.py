@@ -71,7 +71,14 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
             logger.info(f"✅ PDF generation complete: {pdf_path}")
             return f"PDF gerado com sucesso: {pdf_path}"
         else:
-            return f"Error generating PDF: {result.stderr}"
+            error_msg = result.stderr if result.stderr else result.stdout
+            logger.error(f"❌ PDF generation failed (returncode {result.returncode}): {error_msg}")
+
+            # Check for typst not installed
+            if "typst not installed" in error_msg:
+                return "❌ ERRO CRÍTICO: Typst não está instalado no servidor. Notifique o administrador."
+
+            return f"❌ Erro ao gerar PDF: {error_msg}"
 
     except subprocess.TimeoutExpired:
         logger.error("PDF generation timed out")

@@ -10,7 +10,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     gcc \
     python3-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Typst (required for PDF generation)
+RUN wget https://github.com/typst/typst/releases/download/v0.12.0/typst-x86_64-unknown-linux-musl.tar.xz \
+    && tar -xf typst-x86_64-unknown-linux-musl.tar.xz \
+    && mv typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst \
+    && rm -rf typst-x86_64-unknown-linux-musl* \
+    && chmod +x /usr/local/bin/typst
 
 # Install uv for faster Python package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

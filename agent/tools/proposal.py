@@ -264,6 +264,173 @@ def update_proposal_field(
 
 
 @tool
+def get_proposal_structure(yaml_file_path: str) -> str:
+    """
+    Get ONLY the structure/outline of a proposal without loading full content.
+
+    This is much more efficient than load_proposal_yaml() when you just need to:
+    - Navigate sections ("which section has the budget?")
+    - Count elements ("how many bullets in section 2?")
+    - See section titles
+    - Understand proposal organization
+
+    Args:
+        yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
+
+    Returns:
+        Compact outline with meta info and section structure
+    """
+    yaml_full_path = SUBMODULE_PATH / yaml_file_path
+
+    if not yaml_full_path.exists():
+        return f"Error: File not found: {yaml_file_path}"
+
+    try:
+        with open(yaml_full_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+
+        # Build compact structure
+        meta = data.get('meta', {})
+        sections = data.get('sections', [])
+
+        # Format output (minimal tokens)
+        result = []
+        result.append(f"📄 {meta.get('title', 'Sem título')}")
+        result.append(f"👤 Cliente: {meta.get('client', 'N/A')}")
+        result.append(f"📅 Data: {meta.get('date', 'N/A')}")
+        result.append("")
+        result.append(f"📑 Seções ({len(sections)}):")
+
+        for i, section in enumerate(sections):
+            title = section.get('title', f'Seção {i}')
+            result.append(f"  [{i}] {title}")
+
+            # Add compact metadata about section content
+            details = []
+            if section.get('content'):
+                content_len = len(section['content'])
+                details.append(f"{content_len} chars")
+
+            if 'bullets' in section:
+                bullet_count = len(section['bullets'])
+                details.append(f"{bullet_count} bullets")
+
+            if 'subsections' in section:
+                subsection_count = len(section['subsections'])
+                details.append(f"{subsection_count} subsections")
+
+            if 'budget' in section:
+                details.append("budget")
+
+            if 'profiles' in section:
+                profile_count = len(section['profiles'])
+                details.append(f"{profile_count} profiles")
+
+            if details:
+                result.append(f"      → {', '.join(details)}")
+
+        output = "\n".join(result)
+        logger.info(f"📋 Structure: {len(output)} chars (vs ~{len(str(data))} full YAML)")
+
+        return output
+
+    except Exception as e:
+        logger.error(f"Error reading structure: {e}")
+        return f"Error: {str(e)}"
+
+
+@tool
+def read_section_content(
+    yaml_file_path: str,
+    section_index: int
+) -> str:
+    """
+    Read ONLY a specific section's content without loading the entire proposal.
+
+    This is much more efficient than load_proposal_yaml() when you need:
+    - Content of one section for editing
+    - Context for adding/modifying text in a section
+    - Viewing a specific section
+
+    Args:
+        yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
+        section_index: Section index (0-based, from get_proposal_structure)
+
+    Returns:
+        Section data including title, content, bullets, subsections
+    """
+    yaml_full_path = SUBMODULE_PATH / yaml_file_path
+
+    if not yaml_full_path.exists():
+        return f"Error: File not found: {yaml_file_path}"
+
+    try:
+        with open(yaml_full_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+
+        sections = data.get('sections', [])
+
+        if section_index < 0 or section_index >= len(sections):
+            return f"Error: Section index {section_index} out of range (0-{len(sections)-1})"
+
+        section = sections[section_index]
+
+        # Format section content
+        result = []
+        result.append(f"📑 Section [{section_index}]: {section.get('title', 'Untitled')}")
+        result.append("")
+
+        # Content
+        if 'content' in section:
+            result.append("📝 Content:")
+            result.append(section['content'])
+            result.append("")
+
+        # Bullets
+        if 'bullets' in section:
+            result.append(f"🔸 Bullets ({len(section['bullets'])}):")
+            for i, bullet in enumerate(section['bullets']):
+                result.append(f"  [{i}] {bullet}")
+            result.append("")
+
+        # Subsections
+        if 'subsections' in section:
+            result.append(f"📂 Subsections ({len(section['subsections'])}):")
+            for i, subsection in enumerate(section['subsections']):
+                result.append(f"  [{i}] {subsection.get('name', 'Untitled')}")
+                if 'bullets' in subsection:
+                    result.append(f"      → {len(subsection['bullets'])} bullets")
+            result.append("")
+
+        # Budget (if present)
+        if 'budget' in section:
+            budget = section['budget']
+            result.append("💰 Budget:")
+            result.append(f"  Subtotal: {budget.get('subtotal', 'N/A')}")
+            if 'discount' in budget:
+                result.append(f"  Discount: {budget.get('discount')}")
+            result.append(f"  Total: {budget.get('total', 'N/A')}")
+            result.append("")
+
+        # Profiles (if present)
+        if 'profiles' in section:
+            result.append(f"👥 Profiles ({len(section['profiles'])}):")
+            for i, profile in enumerate(section['profiles']):
+                result.append(f"  [{i}] {profile.get('name', 'Unnamed')}")
+            result.append("")
+
+        output = "\n".join(result)
+        full_yaml_size = len(str(data))
+        logger.info(f"📖 Section {section_index}: {len(output)} chars (vs ~{full_yaml_size} full YAML)")
+
+        return output
+
+    except Exception as e:
+        logger.error(f"Error reading section: {e}")
+        return f"Error: {str(e)}"
+
+
+@tool
 def list_existing_proposals(limit: int = 10) -> str:
     """
     List existing proposals in docs/ directory, sorted by date (most recent first)

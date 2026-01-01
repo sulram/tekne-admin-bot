@@ -82,40 +82,20 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Pull with rebase to sync with remote (handles non-fast-forward)
-        logger.info("Syncing with remote (pull --rebase)...")
+        # Pull with merge to sync with remote (preserves history)
+        logger.info("Syncing with remote (pull with merge)...")
         try:
             result = subprocess.run(
-                ["git", "pull", "--rebase", "origin", "main"],
+                ["git", "pull", "--no-rebase", "origin", "main"],
                 check=True,
                 capture_output=True,
                 text=True
             )
             logger.info(f"Git pull output: {result.stdout if result.stdout else result.stderr}")
         except subprocess.CalledProcessError as e:
-            # If pull fails due to conflicts, abort rebase and try force push
-            logger.warning(f"Git pull failed, checking for rebase conflicts: {e.stderr}")
-
-            # Check if we're in a rebase state
-            if "could not apply" in (e.stderr or "") or "Resolve all conflicts" in (e.stderr or ""):
-                logger.warning("Rebase conflict detected, aborting rebase...")
-                subprocess.run(["git", "rebase", "--abort"], capture_output=True)
-
-                # Force push instead (our changes are authoritative)
-                logger.info("Attempting force push...")
-                try:
-                    result = subprocess.run(
-                        ["git", "push", "--force", "--set-upstream", "origin", "main"],
-                        check=True,
-                        capture_output=True,
-                        text=True
-                    )
-                    logger.info(f"Force push succeeded: {result.stdout if result.stdout else result.stderr}")
-                    send_status("✅ Proposta enviada para o repositório! (force push)")
-                    return f"✅ Committed and pushed (force): {message}"
-                except subprocess.CalledProcessError as push_error:
-                    logger.error(f"Force push failed: {push_error.stderr}")
-                    raise  # Re-raise to be caught by outer exception handler
+            # If pull fails, log warning but continue (will be handled by push)
+            logger.warning(f"Git pull failed: {e.stderr}")
+            # Pull failure is not fatal - push will handle it
 
         # Normal push (set upstream automatically if needed)
         logger.info("Pushing to remote...")

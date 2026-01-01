@@ -11,6 +11,8 @@ from bot.auth import check_auth
 from bot.session import clear_session
 from core.cost_tracking import get_cost_stats, reset_cost_tracking
 from agent.agent import reset_agent_session
+from agent.tools import list_existing_proposals, generate_pdf_from_yaml
+from config import SUBMODULE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /proposal - ✨ Criar nova proposta comercial
 /reset - 🔄 Nova sessão (limpar conversa e custos)
 /help - 📖 Mostrar esta mensagem
+
+*GERAÇÃO DE PDF (sem gastar tokens)*
+/list - 📋 Listar propostas com links para gerar PDF
+/pdf - 📄 Gerar PDF diretamente (bypass agent)
 
 *OUTROS COMANDOS*
 /cost - 💰 Ver estatísticas de uso da API
@@ -172,3 +178,100 @@ async def reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reset_cost_tracking(scope="all")
     logger.info(f"User {user_id} reset ALL cost tracking")
     await update.message.reply_text("✅ TODOS os custos foram resetados!\n\n⚠️ Todos os dados de custo (total, diário e sessões) foram apagados.")
+
+
+async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List recent proposals with clickable /pdf commands"""
+    user_id = await check_auth(update, "list command")
+    if user_id is None:
+        return
+
+    try:
+        # Get list of proposals (returns formatted string)
+        proposals_text = list_existing_proposals(limit=10)
+
+        # Parse the text to extract proposal numbers and paths
+        # Format: "1. 📄 docs/yyyy-mm-folder/proposta-name.yml"
+        lines = proposals_text.split('\n')
+        message = "📋 *Propostas Recentes*\n\n"
+
+        for line in lines:
+            if line.strip() and '📄' in line:
+                # Extract the path from the line
+                # Example: "1. 📄 docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml"
+                parts = line.split('📄')
+                if len(parts) >= 2:
+                    number = parts[0].strip().rstrip('.')
+                    path = parts[1].strip()
+
+                    # Extract folder name for display
+                    # docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml -> 2026-01-coca-cola
+                    folder = path.split('/')[1] if '/' in path else path
+
+                    message += f"{number}. {folder}\n   `/pdf {path}`\n\n"
+
+        message += "💡 _Clique em qualquer comando /pdf para gerar o PDF sem usar o agente_"
+
+        await update.message.reply_text(message, parse_mode='Markdown')
+        logger.info(f"User {user_id} listed proposals")
+
+    except Exception as e:
+        logger.error(f"Error listing proposals: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao listar propostas: {str(e)}")
+
+
+async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate PDF directly without using the agent (for testing)"""
+    user_id = await check_auth(update, "pdf command")
+    if user_id is None:
+        return
+
+    # Get the YAML path from command arguments
+    if not context.args or len(context.args) == 0:
+        await update.message.reply_text(
+            "❌ Uso: `/pdf <caminho-yaml>`\n\n"
+            "Exemplo: `/pdf docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml`\n\n"
+            "Use `/list` para ver as propostas disponíveis.",
+            parse_mode='Markdown'
+        )
+        return
+
+    yaml_path = ' '.join(context.args)  # Join in case path has spaces
+
+    try:
+        # Send status message
+        status_msg = await update.message.reply_text("🔨 Gerando PDF...")
+
+        # Generate PDF directly (bypass agent)
+        logger.info(f"User {user_id} generating PDF directly: {yaml_path}")
+        result = generate_pdf_from_yaml(yaml_path)
+
+        # Delete status message
+        await status_msg.delete()
+
+        # Check if successful
+        if "PDF gerado com sucesso" in result:
+            # Extract PDF path from result
+            # Format: "PDF gerado com sucesso: docs/2026-01-coca-cola/2026-01-01-vr-bubble-experience.pdf"
+            pdf_path_relative = result.split(": ")[-1] if ": " in result else yaml_path.replace('.yml', '.pdf')
+            pdf_full_path = SUBMODULE_PATH / pdf_path_relative
+
+            if pdf_full_path.exists():
+                # Send the PDF
+                logger.info(f"Sending PDF: {pdf_full_path}")
+                with open(pdf_full_path, 'rb') as pdf_file:
+                    await update.message.reply_document(
+                        document=pdf_file,
+                        filename=pdf_full_path.name,
+                        caption=f"✅ PDF gerado com sucesso!"
+                    )
+                logger.info(f"PDF sent successfully to user {user_id}")
+            else:
+                await update.message.reply_text(f"⚠️ PDF gerado mas não encontrado: {pdf_path_relative}")
+        else:
+            # Error generating PDF
+            await update.message.reply_text(f"❌ {result}")
+
+    except Exception as e:
+        logger.error(f"Error in pdf_command: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao gerar PDF: {str(e)}")

@@ -16,6 +16,8 @@ from bot.handlers import (
     reset_proposal,
     reset_daily,
     reset_all,
+    list_proposals,
+    pdf_command,
     handle_text_message,
     handle_photo,
     handle_audio,
@@ -65,6 +67,8 @@ app.add_handler(CommandHandler("proposal", start_proposal))
 app.add_handler(CommandHandler("reset", reset_proposal))
 app.add_handler(CommandHandler("resetdaily", reset_daily))
 app.add_handler(CommandHandler("resetall", reset_all))
+app.add_handler(CommandHandler("list", list_proposals))  # List proposals with /pdf links
+app.add_handler(CommandHandler("pdf", pdf_command))  # Generate PDF directly (bypass agent)
 
 # Message handlers (order matters - specific before general)
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -75,8 +79,26 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_mess
 # Run the bot
 if __name__ == "__main__":
     import sys
+    import subprocess
 
     logger.info("🚀 Starting Tekne Admin Bot...")
+
+    # Check Typst installation
+    try:
+        typst_version = subprocess.run(
+            ["typst", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if typst_version.returncode == 0:
+            logger.info(f"✅ Typst installed: {typst_version.stdout.strip()}")
+        else:
+            logger.warning("⚠️  Typst check failed - PDF generation will not work")
+    except FileNotFoundError:
+        logger.error("❌ Typst NOT found - PDF generation will not work!")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not check Typst: {e}")
 
     try:
         # run_polling() handles KeyboardInterrupt gracefully internally

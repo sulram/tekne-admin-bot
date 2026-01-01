@@ -67,11 +67,17 @@ def load_claude_instructions() -> str:
 
 ---
 
-## WORKFLOW
+## WORKFLOW - CRITICAL
 
-After saving/editing YAML and generating PDF:
-- ALWAYS commit and push: `commit_and_push_submodule("Add proposal for X", ["docs/.../file.yml"])`
-- Include YAML + images only (NO PDF files)
+**MANDATORY STEPS after ANY YAML change:**
+1. Save YAML using `save_proposal_yaml()`
+2. Generate PDF using `generate_pdf_from_yaml()`
+3. **IMMEDIATELY** commit and push using `commit_and_push_submodule()`
+
+**You MUST call `commit_and_push_submodule()` after EVERY proposal creation or edit.**
+- Format: `commit_and_push_submodule("Add/Update proposal for [Client]", ["docs/.../file.yml"])`
+- Images are auto-detected and included automatically
+- This is NOT optional - ALWAYS do this step
 
 ## LISTING & EDITING PROPOSALS
 
@@ -326,16 +332,69 @@ def generate_image_dalle(
     return str(img_path.relative_to(SUBMODULE_PATH))
 
 
+def find_proposal_images(yaml_file_path: str) -> List[str]:
+    """
+    Find all image files referenced in a YAML proposal
+
+    Args:
+        yaml_file_path: Path to YAML file (e.g., "docs/2025-12-sesc/proposta-x.yml")
+
+    Returns:
+        List of image file paths in the same directory
+    """
+    import yaml as yaml_lib
+
+    try:
+        yaml_full_path = SUBMODULE_PATH / yaml_file_path
+        yaml_dir = yaml_full_path.parent
+
+        # Read YAML and find all image references
+        with open(yaml_full_path, 'r', encoding='utf-8') as f:
+            data = yaml_lib.safe_load(f)
+
+        image_files = []
+
+        # Check sections for images
+        if "sections" in data:
+            for section in data["sections"]:
+                if "image" in section:
+                    img_path = yaml_dir / section["image"]
+                    if img_path.exists():
+                        image_files.append(str(img_path.relative_to(SUBMODULE_PATH)))
+
+                if "image_before" in section:
+                    img_path = yaml_dir / section["image_before"]
+                    if img_path.exists():
+                        image_files.append(str(img_path.relative_to(SUBMODULE_PATH)))
+
+        # Also check for user-uploaded images in the same directory
+        for img_file in yaml_dir.glob("imagem-usuario-*.jpg"):
+            rel_path = str(img_file.relative_to(SUBMODULE_PATH))
+            if rel_path not in image_files:
+                image_files.append(rel_path)
+
+        for img_file in yaml_dir.glob("imagem-usuario-*.png"):
+            rel_path = str(img_file.relative_to(SUBMODULE_PATH))
+            if rel_path not in image_files:
+                image_files.append(rel_path)
+
+        return image_files
+
+    except Exception as e:
+        logger.warning(f"Could not find images for {yaml_file_path}: {str(e)}")
+        return []
+
+
 @tool
-def commit_and_push_submodule(message: str, files: Optional[List[str]] = None) -> str:
+def commit_and_push_submodule(message: str, files: List[str]) -> str:
     """
     Commit and push changes to the tekne-proposals submodule
 
     Args:
         message: Commit message (e.g., "Add proposal for Client - Project")
-        files: List of file paths to commit (e.g., ["docs/2025-12-client/proposta-project.yml"])
-               REQUIRED - must be a list of strings with at least one file path
+        files: List of file paths to commit - REQUIRED list with at least one YAML file path.
                Example: ["docs/2025-12-sesc/proposta-metaverso.yml"]
+               Images are auto-detected from YAML and included automatically.
 
     Returns:
         Result of git operations
@@ -353,37 +412,78 @@ def commit_and_push_submodule(message: str, files: Optional[List[str]] = None) -
     if not isinstance(files, list):
         return f"Error: 'files' must be a list of strings. Received: {type(files).__name__}"
 
+    original_dir = os.getcwd()
+
     try:
         # Change to submodule directory
         os.chdir(SUBMODULE_PATH)
+        logger.info(f"📁 Changed to submodule directory: {SUBMODULE_PATH}")
+
+        # Auto-detect images from YAML files
+        all_files = list(files)  # Make a copy
+        for file in files:
+            if file.endswith('.yml'):
+                images = find_proposal_images(file)
+                if images:
+                    logger.info(f"🖼️  Found {len(images)} images for {file}")
+                    for img in images:
+                        if img not in all_files:
+                            all_files.append(img)
+                            logger.info(f"📎 Auto-adding image: {img}")
+
+        send_status("📤 Enviando para o repositório...")
 
         # Add files
-        for file in files:
-            subprocess.run(["git", "add", file], check=True)
+        for file in all_files:
+            logger.info(f"📎 Adding file: {file}")
+            result = subprocess.run(
+                ["git", "add", file],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                logger.info(f"✓ Added: {file}")
+            else:
+                logger.warning(f"⚠️  Could not add {file}: {result.stderr}")
 
         # Commit
-        subprocess.run(
+        logger.info(f"Committing with message: {message}")
+        result = subprocess.run(
             ["git", "commit", "-m", message],
             check=True,
-            capture_output=True
+            capture_output=True,
+            text=True
         )
+        logger.info(f"Git commit output: {result.stdout}")
 
         # Push
-        subprocess.run(
+        logger.info("Pushing to remote...")
+        result = subprocess.run(
             ["git", "push"],
             check=True,
-            capture_output=True
+            capture_output=True,
+            text=True
         )
+        logger.info(f"Git push output: {result.stdout if result.stdout else result.stderr}")
 
-        # Return to parent directory
-        os.chdir(SUBMODULE_PATH.parent)
+        send_status("✅ Proposta enviada para o repositório!")
 
         return f"✅ Committed and pushed: {message}"
 
     except subprocess.CalledProcessError as e:
-        return f"Git error: {e.stderr.decode() if e.stderr else str(e)}"
+        error_msg = e.stderr if e.stderr else str(e)
+        logger.error(f"Git error: {error_msg}")
+        send_status(f"❌ Erro ao enviar: {error_msg}")
+        return f"Git error: {error_msg}"
     except Exception as e:
+        logger.error(f"Error in commit_and_push_submodule: {str(e)}")
+        send_status(f"❌ Erro: {str(e)}")
         return f"Error: {str(e)}"
+    finally:
+        # Always return to original directory
+        os.chdir(original_dir)
+        logger.info(f"📁 Returned to original directory: {original_dir}")
 
 
 @tool
@@ -591,13 +691,20 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     logger.info(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
     logger.info(f"[Session {session_id}] Agent response length: {len(response.content)} chars")
 
-    # Log if tools were used
+    # Log if tools were used and check for missing commit
+    tools_used = []
     if hasattr(response, 'messages'):
         for msg in response.messages:
             if hasattr(msg, 'role') and msg.role == 'assistant':
                 if hasattr(msg, 'content') and msg.content is not None:
                     for block in msg.content:
                         if hasattr(block, 'type') and block.type == 'tool_use':
+                            tools_used.append(block.name)
                             logger.info(f"[Session {session_id}] Tool used: {block.name}")
+
+    # Check if agent modified proposal but didn't commit
+    if 'save_proposal_yaml' in tools_used and 'commit_and_push_submodule' not in tools_used:
+        logger.warning(f"⚠️  [Session {session_id}] Agent saved YAML but did NOT commit to git!")
+        send_status("⚠️ Aviso: Proposta salva mas não enviada ao repositório")
 
     return response.content

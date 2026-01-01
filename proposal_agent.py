@@ -28,6 +28,9 @@ CLAUDE_MD_PATH = SUBMODULE_PATH / "CLAUDE.md"
 # Global callback for sending status messages to user
 _status_callback: Optional[Callable[[str], None]] = None
 
+# Global callback for managing user session state
+_session_state_callback: Optional[Callable[[str, dict], None]] = None
+
 def set_status_callback(callback: Callable[[str], None]) -> None:
     """Set callback function to send status updates to user"""
     global _status_callback
@@ -37,6 +40,16 @@ def send_status(message: str) -> None:
     """Send status message to user if callback is set"""
     if _status_callback:
         _status_callback(message)
+
+def set_session_state_callback(callback: Callable[[str, dict], None]) -> None:
+    """Set callback function to update user session state"""
+    global _session_state_callback
+    _session_state_callback = callback
+
+def update_session_state(session_id: str, state_updates: dict) -> None:
+    """Update user session state if callback is set"""
+    if _session_state_callback:
+        _session_state_callback(session_id, state_updates)
 
 
 def load_claude_instructions() -> str:
@@ -71,6 +84,35 @@ def load_claude_instructions() -> str:
 
 **DO NOT skip the commit step!** All proposals must be versioned in git.
 **DO NOT commit PDF files** - only YAML and images.
+
+## IMAGE HANDLING (User-provided images)
+
+When user wants to add an image to the proposal, they have TWO options:
+
+**Option 1: AI-generated image** (using DALL-E)
+- Use `generate_image_dalle` tool as usual
+
+**Option 2: User sends their own image**
+- User mentions adding/inserting/including an image to the proposal (any phrasing)
+- Examples: "adicionando uma imagem", "quero adicionar imagem", "inserir uma foto", "colocar uma imagem"
+- **ALWAYS assume they will send their own image** unless they explicitly ask you to generate with AI
+- DO NOT ask "qual você prefere?" or offer options
+- Simply respond: "Entendido! Aguardo você me enviar a imagem pelo Telegram 📷"
+- Call `wait_for_user_image(proposal_dir, position)` tool IMMEDIATELY
+  - proposal_dir: e.g., "docs/2025-12-client"
+  - position: "before_first_section" (default), "after_presentation", or "section_X"
+- Bot will mark session as waiting for image
+- User sends image via Telegram
+- Bot automatically saves image and notifies you with the image path
+- You MUST follow this exact order:
+  1. Use `load_proposal_yaml` to load the existing YAML file
+  2. Use `add_user_image_to_yaml` to add the image reference to the YAML content
+  3. Use `save_proposal_yaml` with `existing_file_path` to save the updated YAML
+  4. ONLY THEN use `generate_pdf_from_yaml` to generate the PDF
+
+**CRITICAL**: You MUST save the YAML file BEFORE generating the PDF! Otherwise the PDF won't have the image.
+
+**IMPORTANT**: When user mentions adding an image in ANY form, ALWAYS assume they're sending it and use `wait_for_user_image` tool!
 
 ## RESPONSE STYLE (Telegram Bot)
 
@@ -378,6 +420,90 @@ def list_existing_proposals() -> str:
 
 
 @tool
+def wait_for_user_image(proposal_dir: str, position: str = "before_first_section") -> str:
+    """
+    Tell the bot to wait for user to send an image via Telegram
+
+    Args:
+        proposal_dir: Directory where proposal is being created (e.g., "docs/2025-12-client")
+        position: Where to place the image - options:
+                 - "before_first_section" (default): Before first section
+                 - "after_presentation": After presentation text
+                 - "section_X": In specific section (e.g., "section_0", "section_1")
+
+    Returns:
+        Confirmation message
+    """
+    logger.info(f"Agent requesting user image for proposal in {proposal_dir}, position: {position}")
+
+    # Update session state to mark waiting for image
+    update_session_state("current", {
+        "waiting_for_image": {
+            "proposal_dir": proposal_dir,
+            "position": position
+        }
+    })
+
+    # Don't send status here - agent will respond to user directly
+    # send_status("📷 Aguardo você enviar a imagem pelo Telegram!")
+
+    return f"Marked as waiting for user image. Position: {position}. User will send image via Telegram. Tell user you're waiting for the image."
+
+
+@tool
+def add_user_image_to_yaml(
+    yaml_content: str,
+    image_path: str,
+    position: str = "before_first_section"
+) -> str:
+    """
+    Add user-provided image to YAML content at specified position
+
+    Args:
+        yaml_content: Current YAML content
+        image_path: Path to image file (relative to submodule root)
+        position: Where to add the image
+
+    Returns:
+        Modified YAML content with image added
+    """
+    import yaml as yaml_lib
+
+    try:
+        data = yaml_lib.safe_load(yaml_content)
+
+        if position == "before_first_section":
+            # Add image_before to meta
+            if "meta" not in data:
+                data["meta"] = {}
+            data["meta"]["image_before"] = image_path
+            logger.info(f"Added image_before: {image_path}")
+
+        elif position == "after_presentation":
+            # Add to presentation section
+            if "sections" in data and len(data["sections"]) > 0:
+                # Assuming first section is presentation
+                if "image_after" not in data["sections"][0]:
+                    data["sections"][0]["image_after"] = image_path
+                    logger.info(f"Added image_after to presentation: {image_path}")
+
+        elif position.startswith("section_"):
+            # Add to specific section
+            section_idx = int(position.split("_")[1])
+            if "sections" in data and len(data["sections"]) > section_idx:
+                data["sections"][section_idx]["image"] = image_path
+                logger.info(f"Added image to section {section_idx}: {image_path}")
+
+        # Convert back to YAML
+        modified_yaml = yaml_lib.dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        return modified_yaml
+
+    except Exception as e:
+        logger.error(f"Error adding image to YAML: {str(e)}")
+        return yaml_content  # Return original on error
+
+
+@tool
 def load_proposal_yaml(yaml_file_path: str) -> str:
     """
     Load existing proposal YAML for editing
@@ -411,6 +537,8 @@ proposal_agent = Agent(
         save_proposal_yaml,
         generate_pdf_from_yaml,
         generate_image_dalle,
+        wait_for_user_image,
+        add_user_image_to_yaml,
         commit_and_push_submodule,
         list_existing_proposals,
         load_proposal_yaml,

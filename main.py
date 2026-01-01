@@ -2,11 +2,14 @@ import os
 import logging
 import time
 import asyncio
+import threading
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
-from proposal_agent import get_agent_response, set_status_callback
+from proposal_agent import get_agent_response, set_status_callback, set_session_state_callback
+import httpcore
+from anthropic import APIConnectionError, APITimeoutError
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,11 +28,34 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Store user sessions for proposal generation
+# Structure: {user_id: {session_id: str, active: bool, waiting_for_image: dict}}
 user_sessions = {}
+user_sessions_lock = threading.Lock()
+
+# Load allowed users from environment
+ALLOWED_USERS_ENV = os.getenv("ALLOWED_USERS", "")
+ALLOWED_USERS = set()
+if ALLOWED_USERS_ENV:
+    ALLOWED_USERS = {int(user_id.strip()) for user_id in ALLOWED_USERS_ENV.split(",") if user_id.strip()}
+    logger.info(f"Access control enabled for {len(ALLOWED_USERS)} users: {ALLOWED_USERS}")
+else:
+    logger.warning("⚠️  ALLOWED_USERS not set - bot is open to all users!")
+
+
+def is_user_allowed(user_id: int) -> bool:
+    """Check if user is allowed to use the bot"""
+    # If ALLOWED_USERS is empty, allow all users
+    if not ALLOWED_USERS:
+        return True
+    return user_id in ALLOWED_USERS
 
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f'Hello {update.effective_user.first_name}')
+    user = update.effective_user
+    await update.message.reply_text(
+        f'Hello {user.first_name}!\n'
+        f'Your user ID: `{user.id}`'
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -50,12 +76,20 @@ You can also:
 async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start a new proposal generation session"""
     user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized access attempt by user {user_id} ({update.effective_user.username})")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
     session_id = f"user_{user_id}"
 
     logger.info(f"User {user_id} ({update.effective_user.username}) started new proposal")
 
     # Reset session
-    user_sessions[user_id] = {"session_id": session_id, "active": True}
+    with user_sessions_lock:
+        user_sessions[user_id] = {"session_id": session_id, "active": True}
 
     # Send initial message to agent
     initial_message = "Olá! Quero criar uma nova proposta."
@@ -67,6 +101,9 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         response = get_agent_response(initial_message, session_id=session_id)
         logger.info(f"Agent response length: {len(response)} chars")
         await status_msg.edit_text(response)
+    except (httpcore.ConnectError, APIConnectionError, APITimeoutError) as e:
+        logger.error(f"API connection error for user {user_id}: {str(e)}")
+        await status_msg.edit_text("⚠️ Problema de conexão com a API. Por favor, tente novamente.")
     except Exception as e:
         logger.error(f"Error starting agent for user {user_id}: {str(e)}", exc_info=True)
         await status_msg.edit_text(f"❌ Erro ao iniciar agente: {str(e)}")
@@ -76,8 +113,9 @@ async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Reset proposal generation session"""
     user_id = update.effective_user.id
 
-    if user_id in user_sessions:
-        del user_sessions[user_id]
+    with user_sessions_lock:
+        if user_id in user_sessions:
+            del user_sessions[user_id]
 
     await update.message.reply_text("✅ Sessão resetada! Use /proposal para começar uma nova proposta.")
 
@@ -167,20 +205,34 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     user_text = update.message.text
 
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized message from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
     logger.info(f"User {user_id} sent text: {user_text[:100]}...")
 
     # Check if user has an active proposal session
-    if user_id in user_sessions and user_sessions[user_id].get("active"):
-        session_id = user_sessions[user_id]["session_id"]
+    with user_sessions_lock:
+        has_active_session = user_id in user_sessions and user_sessions[user_id].get("active")
+        session_id = user_sessions[user_id]["session_id"] if has_active_session else None
+
+    if has_active_session:
 
         status_msg = await update.message.reply_text("💭 Processando...")
         progress_task = None
 
         # Setup status callback for this user - send messages immediately
+        pdf_generated = False  # Flag to track if PDF was generated
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
-            nonlocal progress_task
+            nonlocal progress_task, pdf_generated
             logger.info(f"Status callback received: {message}")
+            # Check if PDF was generated
+            if "PDF gerado" in message:
+                pdf_generated = True
+                logger.info("🎯 PDF generation detected - will send file after completion")
             # Cancel progress when status message arrives
             if progress_task and not progress_task.done():
                 logger.info("Cancelling progress task due to status callback")
@@ -190,7 +242,16 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 lambda: asyncio.create_task(update.message.reply_text(message))
             )
 
+        def session_state_callback(session_id_key: str, state_updates: dict):
+            """Callback to update user session state - thread-safe"""
+            # This runs in the agent's thread, use lock for thread safety
+            with user_sessions_lock:
+                if user_id in user_sessions:
+                    user_sessions[user_id].update(state_updates)
+                    logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
+
         set_status_callback(status_callback)
+        set_session_state_callback(session_state_callback)
 
         # Start progress indicator task
         logger.info("Starting progress indicator")
@@ -223,10 +284,20 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Send response (handles long messages)
             await send_long_message(update, response, status_msg=None)
 
-            # Check for PDF file mentioned in response
-            if "PDF gerado" in response or ".pdf" in response:
+            # Send PDF if it was generated (detected via callback)
+            if pdf_generated:
+                logger.info("🎯 Sending PDF after generation...")
                 await send_pdf_if_exists(update, response)
 
+        except (httpcore.ConnectError, APIConnectionError, APITimeoutError) as e:
+            logger.error(f"API connection error for user {user_id}: {str(e)}")
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+            await update.message.reply_text("⚠️ Problema de conexão com a API. Por favor, tente novamente.")
         except Exception as e:
             logger.error(f"Error processing message for user {user_id}: {str(e)}", exc_info=True)
             if progress_task and not progress_task.done():
@@ -241,6 +312,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         finally:
             # Clear status callback
             set_status_callback(None)
+            set_session_state_callback(None)
     else:
         # No active session - suggest starting one
         await update.message.reply_text(
@@ -268,6 +340,17 @@ async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
 
         pdf_path = Path("submodules/tekne-proposals") / pdf_relative_path
 
+        # If exact path doesn't exist, try to find PDF in the same directory
+        if not pdf_path.exists():
+            logger.info(f"Exact PDF path not found: {pdf_path}, searching directory...")
+            pdf_dir = pdf_path.parent
+            if pdf_dir.exists():
+                # Find any PDF file in the directory (most recent)
+                pdf_files = sorted(pdf_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if pdf_files:
+                    pdf_path = pdf_files[0]
+                    logger.info(f"Found PDF in directory: {pdf_path}")
+
         if pdf_path.exists():
             logger.info(f"Sending PDF: {pdf_path}")
             try:
@@ -281,14 +364,176 @@ async def send_pdf_if_exists(update: Update, agent_response: str) -> None:
                 logger.error(f"Error sending PDF: {str(e)}")
                 await update.message.reply_text(f"❌ Erro ao enviar PDF: {str(e)}")
         else:
-            logger.warning(f"PDF path found in response but file doesn't exist: {pdf_path}")
+            logger.warning(f"PDF path not found: {pdf_path}")
     else:
         logger.info("No PDF path found in agent response")
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle photo messages - save to proposal directory if agent is waiting"""
+    user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized photo from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
+    # Check if user has active session and is waiting for image
+    with user_sessions_lock:
+        if user_id not in user_sessions or not user_sessions[user_id].get("active"):
+            await update.message.reply_text("💡 Use /proposal primeiro para criar uma proposta.")
+            return
+
+        session = user_sessions[user_id]
+        waiting_for_image = session.get("waiting_for_image")
+        logger.info(f"🔍 Photo handler - Session state: active={session.get('active')}, waiting_for_image={waiting_for_image}")
+
+    if not waiting_for_image:
+        await update.message.reply_text(
+            "📷 Recebi a imagem, mas não estou esperando uma imagem no momento.\n"
+            "Por favor, diga ao agente que deseja adicionar uma imagem à proposta."
+        )
+        return
+
+    try:
+        # Get the largest photo
+        photo = update.message.photo[-1]
+        photo_file = await photo.get_file()
+
+        status_msg = await update.message.reply_text("📥 Baixando imagem...")
+
+        # Get proposal directory from session
+        proposal_dir = waiting_for_image.get("proposal_dir")
+        if not proposal_dir:
+            await status_msg.edit_text("❌ Erro: diretório da proposta não encontrado.")
+            return
+
+        # Generate filename
+        import time
+        timestamp = int(time.time())
+        image_filename = f"imagem-usuario-{timestamp}.jpg"
+
+        # Full path to save
+        from pathlib import Path
+        proposal_path = Path("submodules/tekne-proposals") / proposal_dir
+        proposal_path.mkdir(parents=True, exist_ok=True)
+        image_path = proposal_path / image_filename
+
+        # Download the image
+        await photo_file.download_to_drive(str(image_path))
+
+        # Use only filename (relative to the YAML file's directory)
+        relative_image_path = image_filename
+
+        logger.info(f"Saved user image to: {proposal_dir}/{image_filename} (will use relative path: {relative_image_path})")
+
+        # Store image info in session and clear waiting state
+        with user_sessions_lock:
+            session["received_image"] = {
+                "path": relative_image_path,
+                "position": waiting_for_image.get("position", "before_first_section")
+            }
+            session["waiting_for_image"] = None
+            session_id = session["session_id"]
+
+        await status_msg.edit_text(
+            f"✅ Imagem recebida e salva!\n"
+            f"Agora vou adicionar à proposta..."
+        )
+
+        # Notify agent that image was received
+        notification = f"Usuário enviou a imagem. Caminho: {relative_image_path}. Por favor, adicione a imagem à proposta na posição solicitada."
+
+        # Create processing message with spinner
+        processing_msg = await update.message.reply_text("💭 Processando...")
+        progress_task = None
+
+        # Setup callbacks for agent processing
+        loop = asyncio.get_event_loop()
+        pdf_generated = False  # Flag to track if PDF was generated
+        def status_callback(message: str):
+            """Callback to send status messages in real-time"""
+            nonlocal progress_task, pdf_generated
+            logger.info(f"Status callback received: {message}")
+            # Check if PDF was generated
+            if "PDF gerado" in message:
+                pdf_generated = True
+                logger.info("🎯 PDF generation detected - will send file after completion")
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(update.message.reply_text(message))
+            )
+
+        def session_state_callback_for_image(_: str, state_updates: dict):
+            """Callback to update user session state - thread-safe"""
+            with user_sessions_lock:
+                if user_id in user_sessions:
+                    user_sessions[user_id].update(state_updates)
+                    logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
+
+        set_status_callback(status_callback)
+        set_session_state_callback(session_state_callback_for_image)
+
+        # Start progress indicator
+        progress_task = asyncio.create_task(show_progress(processing_msg))
+
+        try:
+            # Run agent to process the image
+            response = await loop.run_in_executor(None, get_agent_response, notification, session_id)
+
+            # Cancel progress indicator
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Give status messages time to be sent
+            await asyncio.sleep(0.5)
+
+            # Delete the progress message
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+
+            await send_long_message(update, response, status_msg=None)
+
+            # Send PDF if it was generated (detected via callback)
+            if pdf_generated:
+                logger.info("🎯 Sending PDF after generation...")
+                await send_pdf_if_exists(update, response)
+        except Exception as e:
+            logger.error(f"Error processing image with agent: {str(e)}", exc_info=True)
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+            await update.message.reply_text(f"❌ Erro ao processar: {str(e)}")
+        finally:
+            # Clear callbacks
+            set_status_callback(None)
+            set_session_state_callback(None)
+
+    except Exception as e:
+        logger.error(f"Error handling photo: {str(e)}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao processar imagem: {str(e)}")
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle voice messages and audio files, transcribe and send to agent if session active"""
     user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized audio from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
 
     try:
         # Log audio reception
@@ -338,8 +583,11 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         os.remove(file_path)
 
         # Check if user has active proposal session
-        if user_id in user_sessions and user_sessions[user_id].get("active"):
-            session_id = user_sessions[user_id]["session_id"]
+        with user_sessions_lock:
+            has_active_session = user_id in user_sessions and user_sessions[user_id].get("active")
+            session_id = user_sessions[user_id]["session_id"] if has_active_session else None
+
+        if has_active_session:
             # Show transcription in separate message to preserve it
             await status_msg.edit_text(f"📝 Transcrição:\n{transcription}")
 
@@ -349,9 +597,14 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             # Setup status callback for this user - send messages immediately
             loop = asyncio.get_event_loop()
+            pdf_generated = False  # Flag to track if PDF was generated
             def status_callback(message: str):
                 """Callback to send status messages in real-time"""
-                nonlocal progress_task
+                nonlocal progress_task, pdf_generated
+                # Check if PDF was generated
+                if "PDF gerado" in message:
+                    pdf_generated = True
+                    logger.info("🎯 PDF generation detected - will send file after completion")
                 # Cancel progress when status message arrives
                 if progress_task and not progress_task.done():
                     progress_task.cancel()
@@ -360,7 +613,16 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     lambda: asyncio.create_task(update.message.reply_text(message))
                 )
 
+            def session_state_callback(session_id_key: str, state_updates: dict):
+                """Callback to update user session state - thread-safe"""
+                # This runs in the agent's thread, use lock for thread safety
+                with user_sessions_lock:
+                    if user_id in user_sessions:
+                        user_sessions[user_id].update(state_updates)
+                        logger.info(f"✅ Updated session state for user {user_id}: {state_updates}")
+
             set_status_callback(status_callback)
+            set_session_state_callback(session_state_callback)
 
             # Start progress indicator task
             progress_task = asyncio.create_task(show_progress(processing_msg))
@@ -390,10 +652,20 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 # Send response (handles long messages)
                 await send_long_message(update, response, status_msg=None)
 
-                # Check for PDF in response
-                if "PDF gerado" in response or ".pdf" in response:
+                # Send PDF if it was generated (detected via callback)
+                if pdf_generated:
+                    logger.info("🎯 Sending PDF after generation...")
                     await send_pdf_if_exists(update, response)
 
+            except (httpcore.ConnectError, APIConnectionError, APITimeoutError) as e:
+                logger.error(f"API connection error for user {user_id}: {str(e)}")
+                if progress_task and not progress_task.done():
+                    progress_task.cancel()
+                try:
+                    await processing_msg.delete()
+                except Exception:
+                    pass
+                await update.message.reply_text("⚠️ Problema de conexão com a API. Por favor, tente novamente.")
             except Exception as e:
                 logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
                 if progress_task and not progress_task.done():
@@ -405,6 +677,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             finally:
                 # Clear status callback
                 set_status_callback(None)
+                set_session_state_callback(None)
         else:
             # No active session - just show transcription
             await status_msg.edit_text(f"📝 Transcrição:\n\n{transcription}")
@@ -422,7 +695,12 @@ async def post_init(application) -> None:
         BotCommand("proposal", "Criar nova proposta comercial"),
         BotCommand("reset", "Resetar conversa atual"),
     ]
-    await application.bot.set_my_commands(commands)
+    try:
+        await application.bot.set_my_commands(commands)
+        logger.info("✅ Bot commands set successfully")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not set bot commands (will retry later): {str(e)}")
+        # Don't fail startup - commands will still work, just won't show in UI
 
 
 app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).post_init(post_init).build()
@@ -434,6 +712,7 @@ app.add_handler(CommandHandler("proposal", start_proposal))
 app.add_handler(CommandHandler("reset", reset_proposal))
 
 # Message handlers (order matters - specific before general)
+app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 app.add_handler(MessageHandler(filters.VOICE, handle_audio))
 app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))

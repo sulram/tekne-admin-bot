@@ -65,7 +65,9 @@ Available commands:
 /help - Show this help message
 /cost - Show API usage statistics
 /proposal - Start creating a new proposal
-/reset - Reset current proposal conversation
+/reset - Reset current proposal conversation and your session costs
+/resetdaily - Reset daily cost tracking
+/resetall - Reset ALL cost tracking (requires confirmation)
 
 You can also:
 - Send voice messages or audio files, and I'll transcribe them for you!
@@ -126,6 +128,38 @@ async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     reset_cost_tracking(scope="session", session_id=session_id)
 
     await update.message.reply_text("✅ Sessão e custos resetados! Use /proposal para começar uma nova proposta.")
+
+
+async def reset_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reset daily cost tracking"""
+    user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized reset-daily command from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
+    # Reset daily cost tracking
+    reset_cost_tracking(scope="daily")
+    logger.info(f"User {user_id} reset daily cost tracking")
+    await update.message.reply_text("✅ Custos diários resetados!")
+
+
+async def reset_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reset all cost tracking"""
+    user_id = update.effective_user.id
+
+    # Check if user is allowed
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized resetall command from user {user_id}")
+        await update.message.reply_text("❌ Você não tem permissão para usar este bot.")
+        return
+
+    # Reset all cost tracking
+    reset_cost_tracking(scope="all")
+    logger.info(f"User {user_id} reset ALL cost tracking")
+    await update.message.reply_text("✅ TODOS os custos foram resetados!\n\n⚠️ Todos os dados de custo (total, diário e sessões) foram apagados.")
 
 
 async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -868,6 +902,8 @@ async def post_init(application) -> None:
         BotCommand("cost", "Mostrar estatísticas de uso da API"),
         BotCommand("proposal", "Criar nova proposta comercial"),
         BotCommand("reset", "Resetar conversa e custos da sessão"),
+        BotCommand("resetdaily", "Resetar custos diários"),
+        BotCommand("resetall", "Resetar TODOS os custos (requer confirmação)"),
     ]
     try:
         await application.bot.set_my_commands(commands)
@@ -885,6 +921,8 @@ app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("cost", cost_command))
 app.add_handler(CommandHandler("proposal", start_proposal))
 app.add_handler(CommandHandler("reset", reset_proposal))
+app.add_handler(CommandHandler("resetdaily", reset_daily))
+app.add_handler(CommandHandler("resetall", reset_all))
 
 # Message handlers (order matters - specific before general)
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

@@ -55,6 +55,24 @@ Click "Deploy" and monitor logs for:
 
 ## Troubleshooting
 
+### PDF Generation Fails with "typst not installed"
+
+**Error in logs:**
+```
+Error: typst not installed
+Install: brew install typst
+```
+
+**Solution:**
+This error means the Typst binary is missing from the Docker image. Make sure you're deploying from the latest commit which includes Typst installation in the Dockerfile.
+
+Check the build logs for:
+```
+RUN wget https://github.com/typst/typst/releases/download/v0.12.0/...
+```
+
+If this line is missing, pull the latest changes and redeploy.
+
 ### Submodule Authentication Failed
 
 **Error:**

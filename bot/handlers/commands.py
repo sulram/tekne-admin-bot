@@ -29,20 +29,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_text = """
 📖 *Comandos Disponíveis*
 
-✨ *PROPOSTAS*
-/proposal - Criar nova proposta comercial
+*PRINCIPAIS (mostrados no menu)*
+/proposal - ✨ Criar nova proposta comercial
+/reset - 🔄 Nova sessão (limpar conversa e custos)
+/help - 📖 Mostrar esta mensagem
 
-💬 *UTILIDADES*
-/hello - Saudar o bot
-/help - Mostrar esta mensagem
+*OUTROS COMANDOS*
+/cost - 💰 Ver estatísticas de uso da API
+/hello - 👋 Teste básico de conexão
 
-💰 *CUSTOS & ESTATÍSTICAS*
-/cost - Ver estatísticas de uso da API
-
-🔄 *RESET*
-/reset - Resetar conversa e custos da sessão
-/resetdaily - Resetar custos diários
-/resetall - Resetar TODOS os custos (requer confirmação)
+*COMANDOS AVANÇADOS*
+/resetdaily - 🗓️ Resetar apenas custos diários
+/resetall - ⚠️ Resetar TODOS os custos (total + diário + sessões)
 
 📝 *OUTRAS FUNCIONALIDADES*
 • Envie mensagens de voz ou áudio → transcrevo para você!

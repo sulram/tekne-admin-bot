@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  tekne-bot:
+    build: .
+    container_name: tekne-admin-bot
+    restart: always  # Always restart on failure
+    environment:
+      # Set these in Dokploy environment variables
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ALLOWED_USERS=${ALLOWED_USERS}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persist proposal submodule (optional - if you want to keep proposals in container)
+      - ./submodules/tekne-proposals:/app/submodules/tekne-proposals
+      # Persist cost tracking data
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python main.py' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

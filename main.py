@@ -40,10 +40,11 @@ else:
 
 async def post_init(application) -> None:
     """Set bot commands in Telegram UI with organized categories"""
-    # Main commands - shown in the menu
+    # Main commands - shown in the menu (top 3 most used)
     commands = [
-        BotCommand("proposal", "✨ Criar nova proposta comercial"),
-        BotCommand("help", "📖 Ver todos os comandos disponíveis"),
+        BotCommand("proposal", "✨ Criar ou editar propostas"),
+        BotCommand("reset", "🔄 Nova sessão (limpar conversa)"),
+        BotCommand("help", "📖 Ver todos os comandos"),
     ]
     try:
         await application.bot.set_my_commands(commands)
@@ -73,5 +74,19 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_mess
 
 # Run the bot
 if __name__ == "__main__":
+    import sys
+
     logger.info("🚀 Starting Tekne Admin Bot...")
-    app.run_polling()
+
+    try:
+        # run_polling() handles KeyboardInterrupt gracefully internally
+        app.run_polling()
+    except Exception as e:
+        # Only catch unexpected fatal errors (not KeyboardInterrupt)
+        logger.critical(f"💥 FATAL ERROR: {e}", exc_info=True)
+        logger.critical("Bot will exit and restart (if configured)")
+        sys.exit(1)  # Exit code 1 triggers Docker restart
+
+    # If we reach here, it's a clean shutdown (Ctrl+C or normal stop)
+    logger.info("👋 Bot stopped gracefully")
+    sys.exit(0)

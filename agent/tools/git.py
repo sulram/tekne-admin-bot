@@ -82,6 +82,20 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
+        # Pull with rebase to sync with remote (handles non-fast-forward)
+        logger.info("Syncing with remote (pull --rebase)...")
+        try:
+            result = subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logger.info(f"Git pull output: {result.stdout if result.stdout else result.stderr}")
+        except subprocess.CalledProcessError as e:
+            # If pull fails, try to continue anyway (might be first push)
+            logger.warning(f"Git pull failed (might be first push): {e.stderr}")
+
         # Push (set upstream automatically if needed)
         logger.info("Pushing to remote...")
         result = subprocess.run(

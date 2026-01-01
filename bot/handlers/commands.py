@@ -8,7 +8,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.handlers._shared import check_auth
+from bot.auth import check_auth
 from core.cost_tracking import get_cost_stats, reset_cost_tracking
 from agent.agent import reset_agent_session
 

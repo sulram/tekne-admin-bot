@@ -11,7 +11,8 @@ from telegram.ext import ContextTypes
 from openai import OpenAI
 
 from config import OPENAI_API_KEY, SUBMODULE_PATH
-from bot.handlers._shared import check_auth, AgentProcessor
+from bot.auth import check_auth
+from bot.agent_processor import AgentProcessor
 from bot.handlers.commands import user_sessions, user_sessions_lock
 
 logger = logging.getLogger(__name__)

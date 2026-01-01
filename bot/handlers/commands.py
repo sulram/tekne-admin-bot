@@ -66,13 +66,20 @@ async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Build response message
         message = "📊 *Estatísticas de Uso da API*\n"
-        message += "=" * 35 + "\n\n"
+        message += "=" * 10 + "\n\n"
 
         # Total
         message += f"💵 *TOTAL (all time)*\n"
         message += f"   Custo: `${total['cost']:.4f}`\n"
         total_tokens = total['input_tokens'] + total['output_tokens']
-        message += f"   Tokens: `{total['input_tokens']:,}` in + `{total['output_tokens']:,}` out = `{total_tokens:,}`\n\n"
+        message += f"   Tokens: `{total['input_tokens']:,}` in + `{total['output_tokens']:,}` out = `{total_tokens:,}`\n"
+
+        # Cache stats (if available)
+        cache_read = total.get('cache_read_tokens', 0)
+        cache_write = total.get('cache_creation_tokens', 0)
+        if cache_read > 0 or cache_write > 0:
+            message += f"   🔄 Cache: `{cache_read:,}` read + `{cache_write:,}` write\n"
+        message += "\n"
 
         # Today
         today = datetime.now().strftime('%Y-%m-%d')
@@ -81,7 +88,14 @@ async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             message += f"📅 *HOJE* ({today})\n"
             message += f"   Custo: `${d['cost']:.4f}`\n"
             message += f"   Requisições: `{d['requests']}`\n"
-            message += f"   Tokens: `{d['input_tokens']:,}` in + `{d['output_tokens']:,}` out\n\n"
+            message += f"   Tokens: `{d['input_tokens']:,}` in + `{d['output_tokens']:,}` out\n"
+
+            # Cache stats for today
+            d_cache_read = d.get('cache_read_tokens', 0)
+            d_cache_write = d.get('cache_creation_tokens', 0)
+            if d_cache_read > 0 or d_cache_write > 0:
+                message += f"   🔄 Cache: `{d_cache_read:,}` read + `{d_cache_write:,}` write\n"
+            message += "\n"
 
         # Recent days
         if len(daily) > 1:
@@ -98,14 +112,21 @@ async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             message += f"👤 *SUA SESSÃO*\n"
             message += f"   Custo: `${s['cost']:.4f}`\n"
             message += f"   Requisições: `{s['requests']}`\n"
-            message += f"   Tokens: `{s['input_tokens']:,}` in + `{s['output_tokens']:,}` out\n\n"
+            message += f"   Tokens: `{s['input_tokens']:,}` in + `{s['output_tokens']:,}` out\n"
+
+            # Cache stats for session
+            s_cache_read = s.get('cache_read_tokens', 0)
+            s_cache_write = s.get('cache_creation_tokens', 0)
+            if s_cache_read > 0 or s_cache_write > 0:
+                message += f"   🔄 Cache: `{s_cache_read:,}` read + `{s_cache_write:,}` write\n"
+            message += "\n"
 
         # Last update
         if stats['last_update']:
             last_update_str = stats['last_update'][:19]  # Remove microseconds
             message += f"🕐 Última atualização: `{last_update_str}`\n"
 
-        message += "=" * 35
+        message += "=" * 10
 
         await update.message.reply_text(message, parse_mode='Markdown')
 

@@ -119,7 +119,12 @@ Examples: ✅ "curso-roblox", "proposta-metaverso" ❌ "curso-de-roblox-para-jov
 # Create the agent
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
-    model=Claude(id="claude-sonnet-4-5"),  # Sonnet 4.5 for better accuracy
+    model=Claude(
+        id="claude-sonnet-4-5",  # Sonnet 4.5 for better accuracy
+        cache_system_prompt=True,  # Enable prompt caching for system instructions
+        betas=["extended-cache-ttl-2025-04-11"],  # Extended cache TTL (1 hour)
+        extended_cache_time=True,  # Use 1-hour cache instead of 5-min
+    ),
     db=InMemoryDb(),  # In-memory storage - YAML files are the source of truth
     instructions=load_claude_instructions(),
     tools=[
@@ -173,18 +178,37 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
         # Metrics is an object, not a dict - use attribute access
         input_tokens = getattr(response.metrics, 'input_tokens', 0)
         output_tokens = getattr(response.metrics, 'output_tokens', 0)
+
+        # Prompt caching metrics (Agno exposes these from Anthropic API)
+        cache_read_tokens = getattr(response.metrics, 'cache_read_tokens', 0)
+        cache_creation_tokens = getattr(response.metrics, 'cache_write_tokens', 0)
+
         total_tokens = input_tokens + output_tokens
 
         # Claude Sonnet 4.5 pricing
-        input_cost = (input_tokens / 1_000_000) * CLAUDE_INPUT_PRICE_PER_1M
+        # Base input tokens (not cached)
+        base_input_cost = (input_tokens / 1_000_000) * CLAUDE_INPUT_PRICE_PER_1M
+        # Cache creation (1-hour TTL = 2x base price)
+        cache_write_cost = (cache_creation_tokens / 1_000_000) * (CLAUDE_INPUT_PRICE_PER_1M * 2.0)
+        # Cache reads (0.1x base price - 90% savings!)
+        cache_read_cost = (cache_read_tokens / 1_000_000) * (CLAUDE_INPUT_PRICE_PER_1M * 0.1)
+        # Output tokens (no cache)
         output_cost = (output_tokens / 1_000_000) * CLAUDE_OUTPUT_PRICE_PER_1M
-        total_cost = input_cost + output_cost
 
+        total_cost = base_input_cost + cache_write_cost + cache_read_cost + output_cost
+
+        # Log token breakdown
         logger.info(f"💰 Token usage: {input_tokens:,} in + {output_tokens:,} out = {total_tokens:,} total")
-        logger.info(f"💵 Cost: ${input_cost:.4f} in + ${output_cost:.4f} out = ${total_cost:.4f} total")
+        if cache_read_tokens > 0 or cache_creation_tokens > 0:
+            logger.info(f"🔄 Cache: {cache_read_tokens:,} read (90% savings!) + {cache_creation_tokens:,} write")
+            cache_savings = (cache_read_tokens / 1_000_000) * CLAUDE_INPUT_PRICE_PER_1M * 0.9
+            logger.info(f"💚 Cache savings: ${cache_savings:.4f} (vs non-cached)")
+
+        logger.info(f"💵 Cost: ${base_input_cost:.4f} base + ${cache_write_cost:.4f} write + ${cache_read_cost:.4f} read + ${output_cost:.4f} out = ${total_cost:.4f} total")
 
         # Track cumulative cost
-        cost_info = track_cost(input_tokens, output_tokens, total_cost, session_id)
+        cost_info = track_cost(input_tokens, output_tokens, total_cost, session_id,
+                              cache_read_tokens, cache_creation_tokens)
 
     # Log if tools were used and check for missing commit
     tools_used = []

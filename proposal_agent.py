@@ -311,18 +311,9 @@ def generate_pdf_from_yaml(yaml_file_path: str) -> str:
         if result.returncode == 0:
             send_status(f"✅ PDF gerado em {elapsed_time:.1f}s!")
 
-            # Extract PDF path from output
-            # The script outputs: "✓ Generated: path/to/file.pdf"
-            pdf_path = None
-            for line in result.stdout.split("\n"):
-                if "Generated:" in line or "✓" in line:
-                    pdf_path = line.split(":")[-1].strip()
-                    break
-
-            # If no path found in output, construct it from yaml path
-            if not pdf_path:
-                # Convert docs/2025-12-client/proposta.yml to docs/2025-12-client/proposta.pdf
-                pdf_path = yaml_file_path.replace('.yml', '.pdf')
+            # Always construct PDF path from YAML path to ensure correctness
+            # Convert docs/2025-12-client/proposta.yml to docs/2025-12-client/proposta.pdf
+            pdf_path = yaml_file_path.replace('.yml', '.pdf')
 
             logger.info(f"PDF path: {pdf_path}")
             return f"PDF gerado com sucesso: {pdf_path}"

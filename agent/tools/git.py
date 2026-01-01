@@ -82,60 +82,26 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Sync with remote using stash + reset + apply strategy
-        logger.info("Syncing with remote (stash + reset + apply)...")
+        # Sync with remote using pull with merge strategy
+        logger.info("Syncing with remote (pull with merge)...")
 
-        # Step 1: Stash local commit (includes new commit we just made)
-        logger.info("Stashing local changes...")
-        subprocess.run(["git", "reset", "HEAD~1"], capture_output=True)  # Undo commit but keep changes
-        subprocess.run(["git", "stash", "push", "-u", "-m", f"Auto-stash: {message}"], capture_output=True)
-
-        # Step 2: Fetch and reset to origin/main
-        logger.info("Fetching and resetting to origin/main...")
-        subprocess.run(["git", "fetch", "origin", "main"], check=True, capture_output=True)
-        subprocess.run(["git", "reset", "--hard", "origin/main"], check=True, capture_output=True)
-
-        # Step 3: Apply stashed changes (accept all incoming in case of conflict)
-        logger.info("Applying stashed changes...")
-        stash_result = subprocess.run(
-            ["git", "stash", "pop"],
-            capture_output=True,
-            text=True
-        )
-
-        # If stash pop had conflicts, accept all "ours" (incoming = our changes)
-        if stash_result.returncode != 0:
-            logger.warning("Stash pop had conflicts, accepting our changes...")
-            # Accept all our changes
-            subprocess.run(["git", "checkout", "--ours", "."], capture_output=True)
-            subprocess.run(["git", "add", "."], capture_output=True)
-            # Clear stash
-            subprocess.run(["git", "stash", "drop"], capture_output=True)
-
-        # Step 4: Check if there are changes to commit
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True
-        )
-
-        if not status_result.stdout.strip():
-            # No changes to commit (already up to date)
-            logger.info("No changes to commit - already synchronized with remote")
-            send_status("✅ Proposta já estava sincronizada no repositório!")
-            return f"✅ No changes needed - already synchronized"
-
-        # Step 5: Commit the changes
-        logger.info(f"Committing synced changes: {message}")
+        # Pull from remote with merge (in conflicts, prefer bot's changes)
+        # -X ours means: in conflict, keep "our" changes (bot)
+        # --no-rebase ensures we use merge, not rebase
         result = subprocess.run(
-            ["git", "commit", "-m", message],
-            check=True,
+            ["git", "pull", "--no-rebase", "-X", "ours", "origin", "main"],
             capture_output=True,
             text=True
         )
-        logger.info(f"Git commit output: {result.stdout}")
 
-        # Step 6: Push to remote
+        # Log pull result (success or failure)
+        if result.returncode == 0:
+            logger.info(f"Git pull successful: {result.stdout if result.stdout else result.stderr}")
+        else:
+            logger.warning(f"Git pull had issues: {result.stderr}")
+            # Even if pull fails, we'll try to push
+
+        # Push to remote
         logger.info("Pushing to remote...")
         result = subprocess.run(
             ["git", "push", "--set-upstream", "origin", "main"],

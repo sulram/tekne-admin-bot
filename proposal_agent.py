@@ -85,6 +85,15 @@ def load_claude_instructions() -> str:
 **DO NOT skip the commit step!** All proposals must be versioned in git.
 **DO NOT commit PDF files** - only YAML and images.
 
+## PDF REGENERATION
+
+When user asks ONLY for the PDF without requesting any changes:
+- Examples: "me manda o PDF", "cadê o PDF?", "quero o PDF", "gera o PDF"
+- Use `list_existing_proposals` to find the most recent proposal
+- Use `generate_pdf_from_yaml` with the YAML path to regenerate PDF
+- DO NOT make any changes to the YAML file
+- The bot will automatically send the PDF file after generation
+
 ## FILE NAMING RULES
 
 **CRITICAL: Keep filenames SHORT and WITHOUT special characters:**

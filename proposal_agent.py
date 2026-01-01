@@ -31,6 +31,9 @@ _status_callback: Optional[Callable[[str], None]] = None
 # Global callback for managing user session state
 _session_state_callback: Optional[Callable[[str, dict], None]] = None
 
+# Cache for CLAUDE.md instructions (loaded once at startup)
+_cached_instructions: Optional[str] = None
+
 def set_status_callback(callback: Callable[[str], None]) -> None:
     """Set callback function to send status updates to user"""
     global _status_callback
@@ -53,7 +56,14 @@ def update_session_state(session_id: str, state_updates: dict) -> None:
 
 
 def load_claude_instructions() -> str:
-    """Load CLAUDE.md as agent instructions"""
+    """Load CLAUDE.md as agent instructions (cached after first load)"""
+    global _cached_instructions
+
+    # Return cached version if available
+    if _cached_instructions is not None:
+        logger.info(f"Using cached instructions ({len(_cached_instructions)} chars)")
+        return _cached_instructions
+
     base_instructions = ""
 
     if CLAUDE_MD_PATH.exists():
@@ -127,7 +137,9 @@ Examples: ✅ "curso-roblox", "proposta-metaverso" ❌ "curso-de-roblox-para-jov
 - Max 1-2 emojis per message
 """
 
-    return base_instructions + bot_instructions
+    # Cache the instructions for future use
+    _cached_instructions = base_instructions + bot_instructions
+    return _cached_instructions
 
 
 def normalize_slug(text: str) -> str:
@@ -616,8 +628,10 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 
     try:
         content = yaml_full_path.read_text(encoding='utf-8')
-        logger.info(f"Loaded proposal: {yaml_file_path}")
-        return f"Conteúdo do arquivo {yaml_file_path}:\n\n```yaml\n{content}\n```"
+        logger.info(f"Loaded proposal: {yaml_file_path} ({len(content)} chars)")
+
+        # Return YAML directly without markdown formatting to save tokens
+        return content
     except Exception as e:
         return f"Error reading file: {str(e)}"
 
@@ -639,6 +653,7 @@ proposal_agent = Agent(
         load_proposal_yaml,
     ],
     add_history_to_context=True,
+    num_history_responses=3,  # Only keep last 3 exchanges to save tokens
     markdown=False,  # Disable markdown - Telegram uses different format
 )
 

@@ -72,23 +72,19 @@ def load_claude_instructions() -> str:
 **MANDATORY STEPS after ANY YAML change:**
 1. Save YAML using `save_proposal_yaml()` → returns file path
 2. Generate PDF using `generate_pdf_from_yaml(yaml_path)`
-3. **IMMEDIATELY** commit using `commit_and_push_submodule(message, files)`
+3. **IMMEDIATELY** commit using `commit_and_push_submodule(message)`
 
 **CRITICAL: How to call commit_and_push_submodule correctly:**
 ```python
-# After save_proposal_yaml returns the path (e.g., "docs/2025-12-sesc/proposta-x.yml")
+# After save_proposal_yaml returns the path
 yaml_path = save_proposal_yaml(...)
 generate_pdf_from_yaml(yaml_path)
-commit_and_push_submodule(
-    message="Update proposal for Client X",
-    files=[yaml_path]  # MUST pass as a list!
-)
+commit_and_push_submodule("Update proposal for Client X")
 ```
 
 **You MUST call `commit_and_push_submodule()` after EVERY proposal creation or edit.**
-- ALWAYS provide both parameters: `message` AND `files`
-- `files` parameter is a LIST containing the YAML file path
-- Images are auto-detected and included automatically
+- Provide a clear commit message describing the change
+- The function automatically commits ALL changes (YAML and images)
 - This is NOT optional - ALWAYS do this step
 
 ## LISTING & EDITING PROPOSALS
@@ -398,44 +394,21 @@ def find_proposal_images(yaml_file_path: str) -> List[str]:
 
 
 @tool
-def commit_and_push_submodule(
-    message: str,
-    files: Optional[List[str]] = None
-) -> str:
+def commit_and_push_submodule(message: str) -> str:
     """
-    Commit and push changes to the tekne-proposals submodule.
+    Commit and push ALL changes in the tekne-proposals submodule.
 
-    IMPORTANT: You MUST provide the 'files' parameter with a list containing the YAML file path.
+    This will add all modified files (YAMLs and images) to git, commit, and push.
 
     Args:
-        message (str): Commit message (e.g., "Add proposal for Client - Project")
-        files (List[str]): List of file paths to commit. REQUIRED - must contain at least one YAML file.
-                          Example: ["docs/2025-12-sesc/proposta-metaverso.yml"]
-                          Images are auto-detected from YAML and included automatically.
+        message (str): Commit message (e.g., "Update proposal for Client X")
 
     Returns:
         str: Result of git operations
 
     Example:
-        commit_and_push_submodule(
-            message="Add SESC proposal",
-            files=["docs/2025-12-sesc/proposta-metaverso.yml"]
-        )
+        commit_and_push_submodule("Update SESC proposal")
     """
-    # Validate files parameter - must be provided
-    if files is None or not files or len(files) == 0:
-        error_msg = (
-            "ERROR: 'files' parameter is REQUIRED!\n"
-            "You must provide a list with the YAML file path.\n"
-            "Example: commit_and_push_submodule(message='...', files=['docs/2025-12-sesc/proposta-x.yml'])"
-        )
-        logger.error(error_msg)
-        send_status("❌ Erro: parâmetro 'files' não foi fornecido")
-        return error_msg
-
-    if not isinstance(files, list):
-        return f"Error: 'files' must be a list of strings. Received: {type(files).__name__}"
-
     original_dir = os.getcwd()
 
     try:
@@ -443,33 +416,11 @@ def commit_and_push_submodule(
         os.chdir(SUBMODULE_PATH)
         logger.info(f"📁 Changed to submodule directory: {SUBMODULE_PATH}")
 
-        # Auto-detect images from YAML files
-        all_files = list(files)  # Make a copy
-        for file in files:
-            if file.endswith('.yml'):
-                images = find_proposal_images(file)
-                if images:
-                    logger.info(f"🖼️  Found {len(images)} images for {file}")
-                    for img in images:
-                        if img not in all_files:
-                            all_files.append(img)
-                            logger.info(f"📎 Auto-adding image: {img}")
-
         send_status("📤 Enviando para o repositório...")
 
-        # Add files
-        for file in all_files:
-            logger.info(f"📎 Adding file: {file}")
-            result = subprocess.run(
-                ["git", "add", file],
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                logger.info(f"✓ Added: {file}")
-            else:
-                logger.warning(f"⚠️  Could not add {file}: {result.stderr}")
+        # Add all changes
+        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
+        logger.info("✓ Added all changes (git add .)")
 
         # Commit
         logger.info(f"Committing with message: {message}")
@@ -492,7 +443,6 @@ def commit_and_push_submodule(
         logger.info(f"Git push output: {result.stdout if result.stdout else result.stderr}")
 
         send_status("✅ Proposta enviada para o repositório!")
-
         return f"✅ Committed and pushed: {message}"
 
     except subprocess.CalledProcessError as e:
@@ -505,7 +455,6 @@ def commit_and_push_submodule(
         send_status(f"❌ Erro: {str(e)}")
         return f"Error: {str(e)}"
     finally:
-        # Always return to original directory
         os.chdir(original_dir)
         logger.info(f"📁 Returned to original directory: {original_dir}")
 

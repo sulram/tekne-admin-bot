@@ -36,6 +36,18 @@ def commit_and_push_submodule(message: str) -> str:
         os.chdir(SUBMODULE_PATH)
         logger.info(f"📁 Changed to submodule directory: {SUBMODULE_PATH}")
 
+        # Check if this is a valid git repository first
+        git_check = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True,
+            text=True
+        )
+
+        if git_check.returncode != 0:
+            logger.warning("⚠️  Not a git repository - skipping git commit/push")
+            logger.info("ℹ️  This is expected in Docker without git initialization")
+            return "⚠️  Git não configurado neste ambiente. O PDF foi gerado com sucesso, mas não foi enviado ao repositório."
+
         send_status("📤 Enviando para o repositório...")
 
         # Ensure we're on main branch (fix detached HEAD state)

@@ -400,7 +400,7 @@ def find_proposal_images(yaml_file_path: str) -> List[str]:
 @tool
 def commit_and_push_submodule(
     message: str,
-    files: List[str] = []
+    files: Optional[List[str]] = None
 ) -> str:
     """
     Commit and push changes to the tekne-proposals submodule.
@@ -423,7 +423,7 @@ def commit_and_push_submodule(
         )
     """
     # Validate files parameter - must be provided
-    if not files or len(files) == 0:
+    if files is None or not files or len(files) == 0:
         error_msg = (
             "ERROR: 'files' parameter is REQUIRED!\n"
             "You must provide a list with the YAML file path.\n"

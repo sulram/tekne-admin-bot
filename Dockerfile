@@ -14,11 +14,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Typst (required for PDF generation)
-RUN wget https://github.com/typst/typst/releases/download/v0.12.0/typst-x86_64-unknown-linux-musl.tar.xz \
-    && tar -xf typst-x86_64-unknown-linux-musl.tar.xz \
-    && mv typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst \
-    && rm -rf typst-x86_64-unknown-linux-musl* \
-    && chmod +x /usr/local/bin/typst
+# Using gnu binary for Debian/Ubuntu (glibc), not musl (Alpine)
+RUN wget https://github.com/typst/typst/releases/download/v0.12.0/typst-x86_64-unknown-linux-gnu.tar.xz \
+    && tar -xf typst-x86_64-unknown-linux-gnu.tar.xz \
+    && mv typst-x86_64-unknown-linux-gnu/typst /usr/local/bin/typst \
+    && rm -rf typst-x86_64-unknown-linux-gnu* \
+    && chmod +x /usr/local/bin/typst \
+    && typst --version
 
 # Install uv for faster Python package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

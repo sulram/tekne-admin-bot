@@ -196,7 +196,9 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         message = "📋 *Propostas Recentes*\n\n"
 
         # Build inline keyboard buttons
+        # Store paths in context for callback lookup (callback_data limited to 64 bytes)
         keyboard = []
+        proposal_paths = []
 
         for line in lines:
             if line.strip() and '📄' in line:
@@ -216,14 +218,20 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                     message += f"{number}. {folder}\n"
 
-                    # Add button for this proposal (each button on its own row)
-                    # Path includes docs/ prefix for generate_pdf_from_yaml
+                    # Store path for callback lookup
+                    proposal_paths.append(f"docs/{path}")
+                    idx = len(proposal_paths) - 1
+
+                    # Add button with short index (fits in 64 bytes)
                     keyboard.append([
                         InlineKeyboardButton(
                             f"📄 {filename}",
-                            callback_data=f"pdf:docs/{path}"
+                            callback_data=f"pdf:{idx}"
                         )
                     ])
+
+        # Store paths in user_data for callback handler
+        context.user_data['proposal_paths'] = proposal_paths
 
         message += "\n💡 _Clique em um botão para gerar o PDF sem usar o agente_"
 
@@ -243,12 +251,24 @@ async def handle_pdf_button(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     user_id = update.effective_user.id
 
-    # Extract path from callback_data (format: "pdf:path/to/file.yml")
+    # Extract index from callback_data (format: "pdf:0", "pdf:1", etc)
     if not query.data or not query.data.startswith("pdf:"):
         await query.edit_message_text("❌ Erro: dados inválidos")
         return
 
-    yaml_path = query.data[4:]  # Remove "pdf:" prefix
+    try:
+        idx = int(query.data[4:])  # Remove "pdf:" prefix and convert to int
+    except ValueError:
+        await query.edit_message_text("❌ Erro: índice inválido")
+        return
+
+    # Get path from stored user_data
+    proposal_paths = context.user_data.get('proposal_paths', [])
+    if idx < 0 or idx >= len(proposal_paths):
+        await query.edit_message_text("❌ Erro: proposta não encontrada. Use /list novamente.")
+        return
+
+    yaml_path = proposal_paths[idx]
 
     try:
         # Update message to show generating status

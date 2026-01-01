@@ -4,10 +4,12 @@ FROM python:3.12.3-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including build tools for ruamel.yaml)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster Python package management

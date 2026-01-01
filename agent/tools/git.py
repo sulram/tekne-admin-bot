@@ -112,7 +112,20 @@ def commit_and_push_submodule(message: str) -> str:
             # Clear stash
             subprocess.run(["git", "stash", "drop"], capture_output=True)
 
-        # Step 4: Commit the changes
+        # Step 4: Check if there are changes to commit
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True
+        )
+
+        if not status_result.stdout.strip():
+            # No changes to commit (already up to date)
+            logger.info("No changes to commit - already synchronized with remote")
+            send_status("✅ Proposta já estava sincronizada no repositório!")
+            return f"✅ No changes needed - already synchronized"
+
+        # Step 5: Commit the changes
         logger.info(f"Committing synced changes: {message}")
         result = subprocess.run(
             ["git", "commit", "-m", message],
@@ -122,7 +135,7 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Step 5: Push to remote
+        # Step 6: Push to remote
         logger.info("Pushing to remote...")
         result = subprocess.run(
             ["git", "push", "--set-upstream", "origin", "main"],

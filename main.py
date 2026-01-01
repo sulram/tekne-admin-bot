@@ -39,15 +39,11 @@ else:
 
 
 async def post_init(application) -> None:
-    """Set bot commands in Telegram UI"""
+    """Set bot commands in Telegram UI with organized categories"""
+    # Main commands - shown in the menu
     commands = [
-        BotCommand("hello", "Saudar o bot"),
-        BotCommand("help", "Mostrar comandos disponíveis"),
-        BotCommand("cost", "Mostrar estatísticas de uso da API"),
-        BotCommand("proposal", "Criar nova proposta comercial"),
-        BotCommand("reset", "Resetar conversa e custos da sessão"),
-        BotCommand("resetdaily", "Resetar custos diários"),
-        BotCommand("resetall", "Resetar TODOS os custos (requer confirmação)"),
+        BotCommand("proposal", "✨ Criar nova proposta comercial"),
+        BotCommand("help", "📖 Ver todos os comandos disponíveis"),
     ]
     try:
         await application.bot.set_my_commands(commands)

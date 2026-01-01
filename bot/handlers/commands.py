@@ -25,22 +25,31 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show help message with available commands"""
+    """Show help message with available commands organized by category"""
     help_text = """
-Available commands:
-/hello - Greet the bot
-/help - Show this help message
-/cost - Show API usage statistics
-/proposal - Start creating a new proposal
-/reset - Reset current proposal conversation and your session costs
-/resetdaily - Reset daily cost tracking
-/resetall - Reset ALL cost tracking (requires confirmation)
+📖 *Comandos Disponíveis*
 
-You can also:
-- Send voice messages or audio files, and I'll transcribe them for you!
-- Send text messages to chat with the proposal generator
+✨ *PROPOSTAS*
+/proposal - Criar nova proposta comercial
+
+💬 *UTILIDADES*
+/hello - Saudar o bot
+/help - Mostrar esta mensagem
+
+💰 *CUSTOS & ESTATÍSTICAS*
+/cost - Ver estatísticas de uso da API
+
+🔄 *RESET*
+/reset - Resetar conversa e custos da sessão
+/resetdaily - Resetar custos diários
+/resetall - Resetar TODOS os custos (requer confirmação)
+
+📝 *OUTRAS FUNCIONALIDADES*
+• Envie mensagens de voz ou áudio → transcrevo para você!
+• Envie mensagens de texto → converso sobre propostas
+• Envie imagens → adiciono às propostas
 """
-    await update.message.reply_text(help_text)
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 
 async def cost_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

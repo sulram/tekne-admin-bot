@@ -126,7 +126,12 @@ When user wants to add an image to the proposal, they have TWO options:
 - Simply respond: "Entendido! Aguardo você me enviar a imagem pelo Telegram 📷"
 - Call `wait_for_user_image(proposal_dir, position)` tool IMMEDIATELY
   - proposal_dir: e.g., "docs/2025-12-client"
-  - position: "before_first_section" (default), "after_presentation", or "section_X"
+  - position options:
+    - "before_first_section": image_before in first section (default)
+    - "after_presentation": image_after in first section
+    - "section_X_before": image_before in section X (e.g., "section_2_before")
+    - "section_X_after": image_after in section X (e.g., "section_2_after")
+    - "section_X": image in section X (e.g., "section_1")
 - Bot will mark session as waiting for image
 - User sends image via Telegram
 - Bot automatically saves image and notifies you with the image path
@@ -477,9 +482,11 @@ def wait_for_user_image(proposal_dir: str, position: str = "before_first_section
     Args:
         proposal_dir: Directory where proposal is being created (e.g., "docs/2025-12-client")
         position: Where to place the image - options:
-                 - "before_first_section" (default): Before first section
-                 - "after_presentation": After presentation text
-                 - "section_X": In specific section (e.g., "section_0", "section_1")
+                 - "before_first_section" (default): image_before in first section
+                 - "after_presentation": image_after in first section
+                 - "section_X_before": image_before in section X (e.g., "section_1_before")
+                 - "section_X_after": image_after in section X (e.g., "section_1_after")
+                 - "section_X": image in section X (e.g., "section_0", "section_1")
 
     Returns:
         Confirmation message
@@ -529,15 +536,27 @@ def add_user_image_to_yaml(
                 logger.info(f"Added image_before to first section: {image_path}")
 
         elif position == "after_presentation":
-            # Add to presentation section
+            # Add image_after to first section (presentation)
             if "sections" in data and len(data["sections"]) > 0:
-                # Assuming first section is presentation
-                if "image_after" not in data["sections"][0]:
-                    data["sections"][0]["image_after"] = image_path
-                    logger.info(f"Added image_after to presentation: {image_path}")
+                data["sections"][0]["image_after"] = image_path
+                logger.info(f"Added image_after to presentation: {image_path}")
+
+        elif position.startswith("section_") and position.endswith("_before"):
+            # Add image_before to specific section (e.g., "section_1_before")
+            section_idx = int(position.split("_")[1])
+            if "sections" in data and len(data["sections"]) > section_idx:
+                data["sections"][section_idx]["image_before"] = image_path
+                logger.info(f"Added image_before to section {section_idx}: {image_path}")
+
+        elif position.startswith("section_") and position.endswith("_after"):
+            # Add image_after to specific section (e.g., "section_1_after")
+            section_idx = int(position.split("_")[1])
+            if "sections" in data and len(data["sections"]) > section_idx:
+                data["sections"][section_idx]["image_after"] = image_path
+                logger.info(f"Added image_after to section {section_idx}: {image_path}")
 
         elif position.startswith("section_"):
-            # Add to specific section
+            # Add image to specific section (e.g., "section_1")
             section_idx = int(position.split("_")[1])
             if "sections" in data and len(data["sections"]) > section_idx:
                 data["sections"][section_idx]["image"] = image_path

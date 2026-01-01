@@ -13,7 +13,7 @@ from openai import OpenAI
 from config import OPENAI_API_KEY, SUBMODULE_PATH
 from bot.auth import check_auth
 from bot.agent_processor import AgentProcessor
-from bot.handlers.commands import user_sessions, user_sessions_lock
+from bot.session import create_session, user_sessions, user_sessions_lock
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +35,14 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"User {user_id} ({update.effective_user.username}) started new proposal")
 
-    # Reset session
-    with user_sessions_lock:
-        user_sessions[user_id] = {"session_id": session_id, "active": True}
+    # Create/reset session
+    create_session(user_id, session_id)
 
     # Send initial message to agent
     initial_message = "Olá! Liste as 10 propostas mais recentes. O que você gostaria de fazer: criar uma nova proposta ou editar uma existente?"
 
-    status_msg = await update.message.reply_text("🚀 Iniciando gerador de propostas...")
-
-    async with AgentProcessor(update, session_id, user_id, status_msg, user_sessions, user_sessions_lock) as processor:
-        await processor.run(initial_message)
+    async with AgentProcessor(update, user_id) as processor:
+        await processor.process(initial_message, status_text="🚀 Iniciando gerador de propostas...")
 
 
 # ============================================================================
@@ -62,21 +59,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     logger.info(f"User {user_id} sent text: {user_text[:100]}...")
 
-    # Check if user has an active proposal session
-    with user_sessions_lock:
-        has_active_session = user_id in user_sessions and user_sessions[user_id].get("active")
-        session_id = user_sessions[user_id]["session_id"] if has_active_session else None
-
-    if has_active_session:
-        status_msg = await update.message.reply_text("💭 Processando...")
-        async with AgentProcessor(update, session_id, user_id, status_msg, user_sessions, user_sessions_lock) as processor:
-            await processor.run(user_text)
-    else:
-        # No active session - suggest starting one
-        await update.message.reply_text(
-            "💡 Para criar uma proposta, use /proposal\n"
-            "Para ajuda, use /help"
-        )
+    # Process with agent (validates session internally)
+    async with AgentProcessor(update, user_id) as processor:
+        await processor.process(user_text)
 
 
 # ============================================================================
@@ -136,22 +121,12 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Clean up the temporary file
         os.remove(file_path)
 
-        # Check if user has active proposal session
-        with user_sessions_lock:
-            has_active_session = user_id in user_sessions and user_sessions[user_id].get("active")
-            session_id = user_sessions[user_id]["session_id"] if has_active_session else None
+        # Show transcription
+        await status_msg.edit_text(f"📝 Transcrição:\n{transcription}")
 
-        if has_active_session:
-            # Show transcription in separate message to preserve it
-            await status_msg.edit_text(f"📝 Transcrição:\n{transcription}")
-
-            # Create new status message for processing
-            processing_msg = await update.message.reply_text("💭 Processando...")
-            async with AgentProcessor(update, session_id, user_id, processing_msg, user_sessions, user_sessions_lock) as processor:
-                await processor.run(transcription)
-        else:
-            # No active session - just show transcription
-            await status_msg.edit_text(f"📝 Transcrição:\n\n{transcription}")
+        # Process with agent (validates session internally)
+        async with AgentProcessor(update, user_id) as processor:
+            await processor.process(transcription)
 
     except Exception as e:
         logger.error(f"Error transcribing audio: {str(e)}", exc_info=True)
@@ -232,10 +207,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Notify agent that image was received
         notification = f"Usuário enviou a imagem. Caminho: {relative_image_path}. Por favor, adicione a imagem à proposta na posição solicitada."
 
-        # Create processing message with spinner
-        processing_msg = await update.message.reply_text("💭 Processando...")
-        async with AgentProcessor(update, session_id, user_id, processing_msg, user_sessions, user_sessions_lock) as processor:
-            await processor.run(notification)
+        # Process with agent
+        async with AgentProcessor(update, user_id) as processor:
+            await processor.process(notification)
 
     except Exception as e:
         logger.error(f"Error handling photo: {str(e)}", exc_info=True)

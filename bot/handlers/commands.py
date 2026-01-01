@@ -3,20 +3,16 @@ Command handlers for bot commands (/hello, /help, /cost, /reset*)
 """
 
 import logging
-import threading
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.auth import check_auth
+from bot.session import clear_session
 from core.cost_tracking import get_cost_stats, reset_cost_tracking
 from agent.agent import reset_agent_session
 
 logger = logging.getLogger(__name__)
-
-# Store user sessions (shared with messages.py)
-user_sessions = {}
-user_sessions_lock = threading.Lock()
 
 
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -114,9 +110,8 @@ async def reset_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     session_id = f"user_{user_id}"
 
-    with user_sessions_lock:
-        if user_id in user_sessions:
-            del user_sessions[user_id]
+    # Clear user session
+    clear_session(user_id)
 
     # Reset agent conversation history for this session
     reset_agent_session(session_id)

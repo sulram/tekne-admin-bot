@@ -2,6 +2,7 @@
 AgentProcessor - Self-contained context manager for agent processing
 
 Handles complete agent workflow with automatic cleanup:
+- Session validation (auth + active session check)
 - Callback registration and cleanup (ThreadLocal + Session Dict)
 - Progress indicator lifecycle
 - Agent execution in thread pool
@@ -13,9 +14,8 @@ Handles complete agent workflow with automatic cleanup:
 import asyncio
 import logging
 import re
-import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from config import SUBMODULE_PATH
 
@@ -24,42 +24,31 @@ logger = logging.getLogger(__name__)
 
 class AgentProcessor:
     """
-    Context manager for agent processing with automatic cleanup
+    Self-contained context manager for agent processing
+
+    Handles everything from session validation to agent execution and cleanup.
+    Handlers just need to call: async with AgentProcessor(update, user_id) as p: await p.process(msg)
 
     Usage:
-        async with AgentProcessor(update, session_id, user_id, status_msg,
-                                  user_sessions, user_sessions_lock) as processor:
-            await processor.run(message)
+        async with AgentProcessor(update, user_id) as processor:
+            await processor.process(message, status_text="💭 Processando...")
     """
 
-    def __init__(
-        self,
-        update,
-        session_id: str,
-        user_id: int,
-        status_msg,
-        user_sessions: dict,
-        user_sessions_lock: threading.Lock
-    ):
+    def __init__(self, update, user_id: int):
         """
         Initialize agent processor
 
         Args:
             update: Telegram update object
-            session_id: User session ID
-            user_id: Telegram user ID
-            status_msg: Status message to update/delete
-            user_sessions: Dict of user sessions (shared state)
-            user_sessions_lock: Lock for thread-safe session access
+            user_id: Telegram user ID (must be authorized)
         """
         self.update = update
-        self.session_id = session_id
         self.user_id = user_id
-        self.status_msg = status_msg
-        self.user_sessions = user_sessions
-        self.user_sessions_lock = user_sessions_lock
+        self.session_id: Optional[str] = None
+        self.status_msg = None
         self.progress_task = None
         self._loop = None
+        self._has_session = False
 
     def _create_status_callback(self, progress_task_ref: list) -> Callable[[str], None]:
         """
@@ -134,37 +123,25 @@ class AgentProcessor:
         """
         def session_state_callback(session_id_key: str, state_updates: dict):
             """Callback to update user session state - thread-safe"""
+            from bot.session import user_sessions, user_sessions_lock
+
             # This runs in the agent's thread, use lock for thread safety
-            with self.user_sessions_lock:
-                if self.user_id in self.user_sessions:
-                    self.user_sessions[self.user_id].update(state_updates)
+            with user_sessions_lock:
+                if self.user_id in user_sessions:
+                    user_sessions[self.user_id].update(state_updates)
                     logger.info(f"✅ Updated session state for user {self.user_id}: {state_updates}")
 
         return session_state_callback
 
     async def __aenter__(self):
-        """Setup callbacks and progress indicator"""
-        from bot.utils import show_progress
-        from core.callbacks import set_status_callback, set_session_state_callback
+        """Setup: validate session, create status message, register callbacks"""
+        from bot.session import get_session_info
 
         # Get event loop
         self._loop = asyncio.get_event_loop()
 
-        # Mutable reference for callback
-        progress_ref = [None]
-
-        # Create callbacks using internal methods
-        status_callback = self._create_status_callback(progress_ref)
-        session_state_callback = self._create_session_state_callback()
-
-        # Register callbacks
-        set_status_callback(self.session_id, status_callback)
-        set_session_state_callback(self.session_id, session_state_callback)
-
-        # Start progress indicator
-        logger.info("Starting progress indicator")
-        self.progress_task = asyncio.create_task(show_progress(self.status_msg))
-        progress_ref[0] = self.progress_task
+        # Check if user has active session
+        self._has_session, self.session_id = get_session_info(self.user_id)
 
         return self
 
@@ -180,36 +157,73 @@ class AgentProcessor:
             except asyncio.CancelledError:
                 pass
 
-        # Clear session callbacks
-        clear_session_callbacks(self.session_id)
+        # Clear session callbacks (only if session was active)
+        if self._has_session and self.session_id:
+            clear_session_callbacks(self.session_id)
 
         # Give status messages time to be sent
         await asyncio.sleep(0.5)
 
         # Delete status message
-        try:
-            await self.status_msg.delete()
-        except Exception:
-            pass
+        if self.status_msg:
+            try:
+                await self.status_msg.delete()
+            except Exception:
+                pass
 
         # Don't suppress exceptions
         return False
 
-    async def run(self, message: str) -> None:
+    async def process(self, message: str, status_text: str = "💭 Processando...") -> None:
         """
-        Process message with agent and send response
+        Process message with agent (if session active)
 
-        Handles everything: agent processing, error handling, sending response
+        This is the main entry point. Handles:
+        - Session validation
+        - Status message creation
+        - Callback setup
+        - Agent execution
+        - Error handling
 
         Args:
             message: Message to send to agent
+            status_text: Text to show in status message
         """
         from agent.agent import get_agent_response
-        from bot.utils import send_long_message
+        from bot.utils import send_long_message, show_progress
+        from core.callbacks import set_status_callback, set_session_state_callback
         import httpcore
         from anthropic import APIConnectionError, APITimeoutError
 
+        # Check if user has active session
+        if not self._has_session:
+            await self.update.message.reply_text(
+                "💡 Para criar uma proposta, use /proposal\n"
+                "Para ajuda, use /help"
+            )
+            return
+
         try:
+            # Create status message
+            self.status_msg = await self.update.message.reply_text(status_text)
+
+            # Mutable reference for callback
+            progress_ref = [None]
+
+            # Create callbacks using internal methods
+            status_callback = self._create_status_callback(progress_ref)
+            session_state_callback = self._create_session_state_callback()
+
+            # Register callbacks
+            set_status_callback(self.session_id, status_callback)
+            set_session_state_callback(self.session_id, session_state_callback)
+
+            # Start progress indicator
+            logger.info("Starting progress indicator")
+            self.progress_task = asyncio.create_task(show_progress(self.status_msg))
+            progress_ref[0] = self.progress_task
+
+            # Process with agent
             logger.info(f"Sending to agent (session {self.session_id}): {message[:50]}...")
 
             # Run agent in thread pool to avoid blocking event loop

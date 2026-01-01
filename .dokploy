@@ -1,0 +1,5 @@
+# Dokploy Configuration
+# Force using Dockerfile instead of Nixpacks
+
+builder = "dockerfile"
+dockerfile = "./Dockerfile"

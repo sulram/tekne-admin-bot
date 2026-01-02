@@ -2,8 +2,10 @@
 Command handlers for bot commands (/hello, /help, /cost, /reset*)
 """
 
+import hashlib
 import logging
 import subprocess
+import yaml
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -213,29 +215,48 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     number = parts[0].strip().rstrip('.')
                     path = parts[1].strip()
 
-                    # Extract folder name for display
-                    # docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml -> 2026-01-coca-cola
-                    folder = path.split('/')[1] if '/' in path else path
-
                     # Extract filename without extension for button label
                     filename = path.split('/')[-1].replace('.yml', '').replace('proposta-', '')
 
-                    message += f"{number}. {folder}\n"
+                    # Try to read the YAML file to get client name
+                    full_path = SUBMODULE_PATH / path
+                    client_name = None
+                    try:
+                        if full_path.exists():
+                            with open(full_path, 'r', encoding='utf-8') as f:
+                                yaml_data = yaml.safe_load(f)
+                                if yaml_data and 'meta' in yaml_data:
+                                    client_name = yaml_data['meta'].get('client', None)
+                    except Exception as e:
+                        logger.warning(f"Could not read client from {path}: {e}")
+
+                    # Format display: "Client: proposal" or just "proposal" if no client
+                    if client_name:
+                        display_text = f"{client_name}: {filename}"
+                        button_label = f"📄 {client_name}: {filename}"
+                    else:
+                        display_text = filename
+                        button_label = f"📄 {filename}"
+
+                    message += f"{number}. {display_text}\n"
 
                     # Generate unique short ID from path (hash last 8 chars)
-                    import hashlib
-                    full_path = f"docs/{path}"
-                    path_hash = hashlib.md5(full_path.encode()).hexdigest()[:8]
+                    full_path_str = f"docs/{path}"
+                    path_hash = hashlib.md5(full_path_str.encode()).hexdigest()[:8]
 
                     # Store path mapping (hash -> path)
                     if 'pdf_paths' not in context.bot_data:
                         context.bot_data['pdf_paths'] = {}
-                    context.bot_data['pdf_paths'][path_hash] = full_path
+                    context.bot_data['pdf_paths'][path_hash] = full_path_str
 
                     # Add button with hash ID (fits in 64 bytes)
+                    # Truncate button label if too long (Telegram limit)
+                    if len(button_label) > 60:
+                        button_label = button_label[:57] + "..."
+
                     keyboard.append([
                         InlineKeyboardButton(
-                            f"📄 {filename}",
+                            button_label,
                             callback_data=f"pdf:{path_hash}"
                         )
                     ])

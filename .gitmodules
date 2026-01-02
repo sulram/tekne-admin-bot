@@ -2,3 +2,4 @@
 	path = submodules/tekne-proposals
 	url = ../tekne-proposals.git
 	# Relative URL inherits parent repo's authentication in Dokploy
+	ignore = all

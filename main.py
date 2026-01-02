@@ -107,11 +107,21 @@ if __name__ == "__main__":
                 timeout=5
             )
             if typst_fonts.returncode == 0:
-                # Check if Space Grotesk is available
-                if "Space Grotesk" in typst_fonts.stdout:
+                # Check if required fonts are available
+                has_space_grotesk = "Space Grotesk" in typst_fonts.stdout
+                has_noto_sans_tc = "Noto Sans TC" in typst_fonts.stdout or "Noto Sans CJK TC" in typst_fonts.stdout
+
+                if has_space_grotesk:
                     logger.info("✅ Space Grotesk font found")
                 else:
                     logger.warning("⚠️  Space Grotesk font NOT found - PDFs will use fallback fonts")
+
+                if has_noto_sans_tc:
+                    logger.info("✅ Noto Sans TC font found (CJK support enabled)")
+                else:
+                    logger.warning("⚠️  Noto Sans TC font NOT found - Chinese/Japanese/Korean characters may not render")
+
+                if not has_space_grotesk or not has_noto_sans_tc:
                     logger.info("Available fonts (first 10 lines):")
                     for line in typst_fonts.stdout.split('\n')[:10]:
                         logger.info(f"  {line}")

@@ -501,6 +501,15 @@ def _list_proposals_impl(limit: int = 10) -> str:
     if not proposals:
         return "Nenhuma proposta encontrada em docs/"
 
+    # Normalize dates to strings for consistent sorting
+    # YAML may parse dates as datetime.date or keep them as strings if quoted
+    for p in proposals:
+        date_value = p.get('date', '')
+        if hasattr(date_value, 'isoformat'):  # datetime.date or datetime.datetime
+            p['date'] = date_value.isoformat()
+        elif not isinstance(date_value, str):
+            p['date'] = str(date_value)
+
     # Sort by date (DESC) then by folder name (DESC)
     # This ensures proposals within same folder are also sorted by date
     proposals.sort(key=lambda p: (p.get('date', ''), p.get('path', '')), reverse=True)

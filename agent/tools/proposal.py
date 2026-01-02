@@ -268,7 +268,14 @@ def update_proposal_field(
         logger.info(f"   Path: {field_path}")
         logger.info(f"   File: {yaml_file_path}")
         logger.info(f"   Response size: {len(response_msg)} chars (~{len(response_msg)//4} tokens)")
-        send_status(f"✏️ Atualizei o campo '{field_path}'!")
+
+        # Create user-friendly status message with preview of new value
+        field_name = field_path.split('.')[-1].split('[')[0]  # Extract readable field name
+        value_preview = str(new_value)[:100]  # Truncate long values
+        if len(str(new_value)) > 100:
+            value_preview += "..."
+
+        send_status(f"✅ {field_name.capitalize()} atualizado: \"{value_preview}\"")
 
         return response_msg
 

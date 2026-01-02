@@ -15,10 +15,15 @@ SUBMODULE_PATH = PROJECT_ROOT / "submodules" / "tekne-proposals"
 DOCS_PATH = SUBMODULE_PATH / "docs"
 CLAUDE_MD_PATH = SUBMODULE_PATH / "CLAUDE.md"
 
-# Cost tracking - persisted in Docker volume
+# Cost tracking - persisted in Docker volume (fallback if Redis unavailable)
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)  # Ensure data directory exists
 COST_TRACKING_FILE = DATA_DIR / "cost_tracking.txt"
+
+# Redis - for agent memory and cost tracking
+# Format: redis://[:password@]host:port/db
+# Example with password: redis://:mypassword@redis:6379/0
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # API Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

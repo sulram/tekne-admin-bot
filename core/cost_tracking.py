@@ -1,18 +1,33 @@
 """
-Cost tracking for API usage
+Cost tracking for API usage - Redis only
+All costs are stored in Redis with atomic operations for thread-safety
 """
 
-import json
 import logging
 from datetime import datetime
-from config import COST_TRACKING_FILE
+from typing import Optional
+
+from core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
+# Redis key prefixes
+REDIS_PREFIX = "cost:"
+REDIS_TOTAL_KEY = f"{REDIS_PREFIX}total"
+REDIS_SESSION_PREFIX = f"{REDIS_PREFIX}session:"
+REDIS_DAILY_PREFIX = f"{REDIS_PREFIX}daily:"
+REDIS_LAST_UPDATE_KEY = f"{REDIS_PREFIX}last_update"
 
-def track_cost(input_tokens: int, output_tokens: int, cost: float, session_id: str = "default",
-               cache_read_tokens: int = 0, cache_creation_tokens: int = 0) -> dict:
-    """Track API costs to a file for monitoring
+
+def track_cost(
+    input_tokens: int,
+    output_tokens: int,
+    cost: float,
+    session_id: str = "default",
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+) -> dict:
+    """Track API costs in Redis with atomic operations
 
     Args:
         input_tokens: Base input tokens (not cached)
@@ -25,155 +40,195 @@ def track_cost(input_tokens: int, output_tokens: int, cost: float, session_id: s
     Returns:
         dict with 'this_request', 'session', 'today', 'total' cost info
     """
-    try:
-        # Read existing data
-        data = {
-            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0,
-                     'cache_read_tokens': 0, 'cache_creation_tokens': 0},
-            'sessions': {},
-            'daily': {},
-            'last_update': None
+    redis = get_redis_client()
+
+    if redis is None:
+        logger.error("❌ Redis unavailable - cannot track costs")
+        return {
+            "this_request": cost,
+            "session": 0.0,
+            "today": 0.0,
+            "total": 0.0,
         }
 
-        if COST_TRACKING_FILE.exists():
-            try:
-                with open(COST_TRACKING_FILE, 'r') as f:
-                    data = json.load(f)
-                    # Ensure cache fields exist in old data
-                    if 'cache_read_tokens' not in data['total']:
-                        data['total']['cache_read_tokens'] = 0
-                    if 'cache_creation_tokens' not in data['total']:
-                        data['total']['cache_creation_tokens'] = 0
-            except:
-                pass  # If file is corrupted, start fresh
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        session_key = f"{REDIS_SESSION_PREFIX}{session_id}"
+        daily_key = f"{REDIS_DAILY_PREFIX}{today}"
 
-        # Update totals
-        data['total']['cost'] += cost
-        data['total']['input_tokens'] += input_tokens
-        data['total']['output_tokens'] += output_tokens
-        data['total']['cache_read_tokens'] += cache_read_tokens
-        data['total']['cache_creation_tokens'] += cache_creation_tokens
+        # Use pipeline for atomic operations
+        pipe = redis.pipeline()
 
-        # Update session totals
-        if session_id not in data['sessions']:
-            data['sessions'][session_id] = {
-                'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0, 'requests': 0,
-                'cache_read_tokens': 0, 'cache_creation_tokens': 0
-            }
-        # Ensure cache fields exist
-        if 'cache_read_tokens' not in data['sessions'][session_id]:
-            data['sessions'][session_id]['cache_read_tokens'] = 0
-        if 'cache_creation_tokens' not in data['sessions'][session_id]:
-            data['sessions'][session_id]['cache_creation_tokens'] = 0
+        # Increment totals (atomic)
+        pipe.hincrbyfloat(REDIS_TOTAL_KEY, "cost", cost)
+        pipe.hincrby(REDIS_TOTAL_KEY, "input_tokens", input_tokens)
+        pipe.hincrby(REDIS_TOTAL_KEY, "output_tokens", output_tokens)
+        pipe.hincrby(REDIS_TOTAL_KEY, "cache_read_tokens", cache_read_tokens)
+        pipe.hincrby(REDIS_TOTAL_KEY, "cache_creation_tokens", cache_creation_tokens)
 
-        data['sessions'][session_id]['cost'] += cost
-        data['sessions'][session_id]['input_tokens'] += input_tokens
-        data['sessions'][session_id]['output_tokens'] += output_tokens
-        data['sessions'][session_id]['cache_read_tokens'] += cache_read_tokens
-        data['sessions'][session_id]['cache_creation_tokens'] += cache_creation_tokens
-        data['sessions'][session_id]['requests'] += 1
+        # Increment session totals (atomic)
+        pipe.hincrbyfloat(session_key, "cost", cost)
+        pipe.hincrby(session_key, "input_tokens", input_tokens)
+        pipe.hincrby(session_key, "output_tokens", output_tokens)
+        pipe.hincrby(session_key, "cache_read_tokens", cache_read_tokens)
+        pipe.hincrby(session_key, "cache_creation_tokens", cache_creation_tokens)
+        pipe.hincrby(session_key, "requests", 1)
 
-        # Update daily totals
-        today = datetime.now().strftime('%Y-%m-%d')
-        if today not in data['daily']:
-            data['daily'][today] = {
-                'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0, 'requests': 0,
-                'cache_read_tokens': 0, 'cache_creation_tokens': 0
-            }
-        # Ensure cache fields exist
-        if 'cache_read_tokens' not in data['daily'][today]:
-            data['daily'][today]['cache_read_tokens'] = 0
-        if 'cache_creation_tokens' not in data['daily'][today]:
-            data['daily'][today]['cache_creation_tokens'] = 0
+        # Increment daily totals (atomic)
+        pipe.hincrbyfloat(daily_key, "cost", cost)
+        pipe.hincrby(daily_key, "input_tokens", input_tokens)
+        pipe.hincrby(daily_key, "output_tokens", output_tokens)
+        pipe.hincrby(daily_key, "cache_read_tokens", cache_read_tokens)
+        pipe.hincrby(daily_key, "cache_creation_tokens", cache_creation_tokens)
+        pipe.hincrby(daily_key, "requests", 1)
 
-        data['daily'][today]['cost'] += cost
-        data['daily'][today]['input_tokens'] += input_tokens
-        data['daily'][today]['output_tokens'] += output_tokens
-        data['daily'][today]['cache_read_tokens'] += cache_read_tokens
-        data['daily'][today]['cache_creation_tokens'] += cache_creation_tokens
-        data['daily'][today]['requests'] += 1
+        # Update last update timestamp
+        pipe.set(REDIS_LAST_UPDATE_KEY, datetime.now().isoformat())
 
-        data['last_update'] = datetime.now().isoformat()
+        # Execute all operations atomically
+        pipe.execute()
 
-        # Write updated data
-        with open(COST_TRACKING_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+        # Get current totals for return value
+        total_cost = float(redis.hget(REDIS_TOTAL_KEY, "cost") or 0)
+        session_cost = float(redis.hget(session_key, "cost") or 0)
+        daily_cost = float(redis.hget(daily_key, "cost") or 0)
 
         # Log with cache info if available
         cache_info = ""
         if cache_read_tokens > 0 or cache_creation_tokens > 0:
             cache_info = f" | Cache: {cache_read_tokens:,} read + {cache_creation_tokens:,} write"
-        logger.info(f"📊 Session {session_id}: ${cost:.4f}{cache_info} | Today: ${data['daily'][today]['cost']:.4f} | Total: ${data['total']['cost']:.4f}")
 
-        # Return cost info for display
+        logger.info(
+            f"📊 Session {session_id}: ${cost:.4f}{cache_info} | "
+            f"Today: ${daily_cost:.4f} | Total: ${total_cost:.4f}"
+        )
+
         return {
-            'this_request': cost,
-            'session': data['sessions'][session_id]['cost'],
-            'today': data['daily'][today]['cost'],
-            'total': data['total']['cost']
+            "this_request": cost,
+            "session": session_cost,
+            "today": daily_cost,
+            "total": total_cost,
         }
+
     except Exception as e:
-        logger.warning(f"Could not track cost: {e}")
+        logger.error(f"❌ Redis error tracking cost: {e}")
         return {
-            'this_request': cost,
-            'session': 0.0,
-            'today': 0.0,
-            'total': 0.0
+            "this_request": cost,
+            "session": 0.0,
+            "today": 0.0,
+            "total": 0.0,
         }
 
 
 def get_cost_stats() -> dict:
-    """Get cost statistics"""
-    if not COST_TRACKING_FILE.exists():
+    """Get cost statistics from Redis"""
+    redis = get_redis_client()
+
+    if redis is None:
+        logger.error("❌ Redis unavailable - cannot get cost stats")
         return {
-            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0},
-            'sessions': {},
-            'daily': {},
-            'last_update': None
+            "total": {"cost": 0.0, "input_tokens": 0, "output_tokens": 0},
+            "sessions": {},
+            "daily": {},
+            "last_update": None,
         }
 
     try:
-        with open(COST_TRACKING_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Error reading cost tracking: {e}")
+        # Get all total stats
+        total_data = redis.hgetall(REDIS_TOTAL_KEY)
+        total = {
+            "cost": float(total_data.get("cost", 0)),
+            "input_tokens": int(total_data.get("input_tokens", 0)),
+            "output_tokens": int(total_data.get("output_tokens", 0)),
+            "cache_read_tokens": int(total_data.get("cache_read_tokens", 0)),
+            "cache_creation_tokens": int(total_data.get("cache_creation_tokens", 0)),
+        }
+
+        # Get all session stats
+        sessions = {}
+        for key in redis.scan_iter(f"{REDIS_SESSION_PREFIX}*"):
+            session_id = key.replace(REDIS_SESSION_PREFIX, "")
+            session_data = redis.hgetall(key)
+            sessions[session_id] = {
+                "cost": float(session_data.get("cost", 0)),
+                "input_tokens": int(session_data.get("input_tokens", 0)),
+                "output_tokens": int(session_data.get("output_tokens", 0)),
+                "cache_read_tokens": int(session_data.get("cache_read_tokens", 0)),
+                "cache_creation_tokens": int(session_data.get("cache_creation_tokens", 0)),
+                "requests": int(session_data.get("requests", 0)),
+            }
+
+        # Get all daily stats
+        daily = {}
+        for key in redis.scan_iter(f"{REDIS_DAILY_PREFIX}*"):
+            date = key.replace(REDIS_DAILY_PREFIX, "")
+            daily_data = redis.hgetall(key)
+            daily[date] = {
+                "cost": float(daily_data.get("cost", 0)),
+                "input_tokens": int(daily_data.get("input_tokens", 0)),
+                "output_tokens": int(daily_data.get("output_tokens", 0)),
+                "cache_read_tokens": int(daily_data.get("cache_read_tokens", 0)),
+                "cache_creation_tokens": int(daily_data.get("cache_creation_tokens", 0)),
+                "requests": int(daily_data.get("requests", 0)),
+            }
+
+        # Get last update
+        last_update = redis.get(REDIS_LAST_UPDATE_KEY)
+
         return {
-            'total': {'cost': 0.0, 'input_tokens': 0, 'output_tokens': 0},
-            'sessions': {},
-            'daily': {},
-            'last_update': None
+            "total": total,
+            "sessions": sessions,
+            "daily": daily,
+            "last_update": last_update,
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Redis error getting stats: {e}")
+        return {
+            "total": {"cost": 0.0, "input_tokens": 0, "output_tokens": 0},
+            "sessions": {},
+            "daily": {},
+            "last_update": None,
         }
 
 
-def reset_cost_tracking(scope: str = "all", session_id: str = None) -> None:
-    """Reset cost tracking
+def reset_cost_tracking(scope: str = "all", session_id: Optional[str] = None) -> None:
+    """Reset cost tracking in Redis
 
     Args:
         scope: What to reset - "all", "daily", "sessions", or "session"
         session_id: Specific session ID to reset (when scope="session")
     """
-    if scope == "all":
-        # Delete the file completely
-        if COST_TRACKING_FILE.exists():
-            COST_TRACKING_FILE.unlink()
-        logger.info("✅ All cost tracking data reset")
-    elif scope == "session" and session_id:
-        # Reset only a specific session
-        data = get_cost_stats()
-        if session_id in data['sessions']:
-            del data['sessions'][session_id]
-            logger.info(f"✅ Session {session_id} cost tracking reset")
-            with open(COST_TRACKING_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
-    else:
-        data = get_cost_stats()
+    redis = get_redis_client()
 
-        if scope == "daily":
-            data['daily'] = {}
+    if redis is None:
+        logger.error("❌ Redis unavailable - cannot reset cost tracking")
+        return
+
+    try:
+        if scope == "all":
+            # Delete all cost-related keys
+            for key in redis.scan_iter(f"{REDIS_PREFIX}*"):
+                redis.delete(key)
+            logger.info("✅ All cost tracking data reset")
+
+        elif scope == "session" and session_id:
+            # Delete specific session
+            session_key = f"{REDIS_SESSION_PREFIX}{session_id}"
+            redis.delete(session_key)
+            logger.info(f"✅ Session {session_id} cost tracking reset")
+
+        elif scope == "daily":
+            # Delete all daily stats
+            for key in redis.scan_iter(f"{REDIS_DAILY_PREFIX}*"):
+                redis.delete(key)
             logger.info("✅ Daily cost tracking reset")
+
         elif scope == "sessions":
-            data['sessions'] = {}
+            # Delete all session stats
+            for key in redis.scan_iter(f"{REDIS_SESSION_PREFIX}*"):
+                redis.delete(key)
             logger.info("✅ Session cost tracking reset")
 
-        with open(COST_TRACKING_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"❌ Redis error resetting cost tracking: {e}")

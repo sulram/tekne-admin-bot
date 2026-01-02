@@ -8,10 +8,12 @@ import time
 from agno.agent import Agent
 from agno.models.anthropic import Claude
 from agno.db.in_memory import InMemoryDb
+from agno.db.redis import RedisDb
 
-from config import CLAUDE_MD_PATH, CLAUDE_INPUT_PRICE_PER_1M, CLAUDE_OUTPUT_PRICE_PER_1M
+from config import CLAUDE_MD_PATH, CLAUDE_INPUT_PRICE_PER_1M, CLAUDE_OUTPUT_PRICE_PER_1M, REDIS_URL
 from core.callbacks import send_status, set_current_session
 from core.cost_tracking import track_cost
+from core.redis_client import get_redis_client
 from agent.tools import (
     save_proposal_yaml,
     load_proposal_yaml,
@@ -209,6 +211,22 @@ User: "create image for proposal X"
     return _cached_instructions
 
 
+def get_agent_db():
+    """Get database for agent - Redis if available, InMemory as fallback"""
+    redis_client = get_redis_client()
+
+    if redis_client is not None:
+        logger.info("✅ Using RedisDb for agent memory")
+        return RedisDb(
+            redis_url=REDIS_URL,
+            # Table name for agent sessions
+            table_name="agent_sessions",
+        )
+    else:
+        logger.warning("⚠️  Redis unavailable, using InMemoryDb (sessions won't persist)")
+        return InMemoryDb()
+
+
 # Create the agent
 proposal_agent = Agent(
     name="Tekne Proposal Generator",
@@ -218,7 +236,7 @@ proposal_agent = Agent(
         betas=["extended-cache-ttl-2025-04-11"],  # Extended cache TTL (1 hour)
         extended_cache_time=True,  # Use 1-hour cache instead of 5-min
     ),
-    db=InMemoryDb(),  # In-memory storage - YAML files are the source of truth
+    db=get_agent_db(),  # Redis for persistence, InMemory as fallback
     instructions=load_claude_instructions(),
     tools=[
         save_proposal_yaml,

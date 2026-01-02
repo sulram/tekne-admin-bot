@@ -1,10 +1,28 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: tekne-redis
+    restart: always
+    command: redis-server --appendonly yes --appendfsync everysec --requirepass ${REDIS_PASSWORD:-tekne2024}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-tekne2024}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - tekne-network
+
   tekne-bot:
     build: .
     container_name: tekne-admin-bot
     restart: always  # Always restart on failure
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
       # Set these in Dokploy environment variables
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -12,11 +30,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ALLOWED_USERS=${ALLOWED_USERS}
       - PYTHONUNBUFFERED=1
+      # Redis connection (with password)
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-tekne2024}@redis:6379/0
     volumes:
       # Persist proposal submodule (optional - if you want to keep proposals in container)
       - ./submodules/tekne-proposals:/app/submodules/tekne-proposals
-      # Persist cost tracking data using named volume (survives deploys)
-      - tekne-data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'python main.py' || exit 1"]
       interval: 30s
@@ -28,8 +46,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - tekne-network
+
+networks:
+  tekne-network:
+    driver: bridge
 
 volumes:
-  tekne-data:
-    # Named volume for persistent data (cost tracking, etc)
-    # This volume persists across container recreation and deploys
+  redis-data:
+    # Redis persistence - AOF (Append-Only File) for durability
+    # All data (agent memory + cost tracking) is stored here

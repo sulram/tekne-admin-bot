@@ -3,6 +3,7 @@ Command handlers for bot commands (/hello, /help, /cost, /reset*)
 """
 
 import logging
+import subprocess
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -39,6 +40,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 *GERAÇÃO DE PDF (sem gastar tokens)*
 /list - 📋 Listar propostas com links para gerar PDF
 /pdf - 📄 Gerar PDF diretamente (bypass agent)
+
+*MANUTENÇÃO*
+/checkupdate - 🔄 Atualizar templates (git pull do submódulo)
 
 *OUTROS COMANDOS*
 /cost - 💰 Ver estatísticas de uso da API
@@ -375,3 +379,61 @@ async def pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         logger.error(f"Error in pdf_command: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Erro ao gerar PDF: {str(e)}")
+
+
+async def check_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Update proposal templates by pulling latest changes from git submodule"""
+    user_id = await check_auth(update, "checkupdate command")
+    if user_id is None:
+        return
+
+    try:
+        # Send status message
+        status_msg = await update.message.reply_text("🔄 Atualizando templates...")
+
+        # Navigate to submodule and pull latest changes
+        logger.info(f"User {user_id} updating proposal templates")
+
+        result = subprocess.run(
+            ["git", "-C", str(SUBMODULE_PATH), "pull"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        # Delete status message
+        await status_msg.delete()
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+
+            # Check if already up to date
+            if "Already up to date" in output or "Already up-to-date" in output:
+                await update.message.reply_text(
+                    "✅ Templates já estão atualizados!\n\n"
+                    f"```\n{output}\n```",
+                    parse_mode='Markdown'
+                )
+            else:
+                # Show what was updated
+                await update.message.reply_text(
+                    "✅ Templates atualizados com sucesso!\n\n"
+                    f"```\n{output}\n```",
+                    parse_mode='Markdown'
+                )
+
+            logger.info(f"Templates updated successfully: {output}")
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            await update.message.reply_text(
+                f"❌ Erro ao atualizar templates:\n\n```\n{error_msg}\n```",
+                parse_mode='Markdown'
+            )
+            logger.error(f"Error updating templates: {error_msg}")
+
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("❌ Timeout: operação demorou muito")
+        logger.error("Git pull timeout")
+    except Exception as e:
+        logger.error(f"Error in check_update: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao atualizar: {str(e)}")

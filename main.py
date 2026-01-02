@@ -18,6 +18,7 @@ from bot.handlers import (
     reset_all,
     list_proposals,
     pdf_command,
+    check_update,
     handle_pdf_button,
     handle_text_message,
     handle_photo,
@@ -72,6 +73,7 @@ app.add_handler(CommandHandler("resetdaily", reset_daily))
 app.add_handler(CommandHandler("resetall", reset_all))
 app.add_handler(CommandHandler("list", list_proposals))  # List proposals with /pdf links
 app.add_handler(CommandHandler("pdf", pdf_command))  # Generate PDF directly (bypass agent)
+app.add_handler(CommandHandler("checkupdate", check_update))  # Update templates from git submodule
 
 # Callback query handler for inline keyboard buttons
 app.add_handler(CallbackQueryHandler(handle_pdf_button, pattern="^pdf:"))

@@ -68,11 +68,24 @@ def commit_and_push_submodule(message: str) -> str:
         except subprocess.CalledProcessError as e:
             logger.warning(f"Could not check/fix branch state: {e.stderr}")
 
-        # Add all changes
+        # Strategy: temp branch + force reset + merge
+        # This prevents "unrelated histories" issues when template changes happen remotely
+
+        # 1. Fetch latest from remote
+        logger.info("Fetching latest from remote...")
+        subprocess.run(["git", "fetch", "origin", "main"], check=True, capture_output=True, text=True)
+        logger.info("✓ Fetched origin/main")
+
+        # 2. Create temporary branch with agent's changes
+        temp_branch = "temp-agent-changes"
+        logger.info(f"Creating temporary branch: {temp_branch}")
+        subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True, text=True)
+        logger.info(f"✓ Created branch {temp_branch}")
+
+        # 3. Add and commit changes in temp branch
         subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
         logger.info("✓ Added all changes (git add .)")
 
-        # Commit
         logger.info(f"Committing with message: {message}")
         result = subprocess.run(
             ["git", "commit", "-m", message],
@@ -82,30 +95,35 @@ def commit_and_push_submodule(message: str) -> str:
         )
         logger.info(f"Git commit output: {result.stdout}")
 
-        # Sync with remote using pull with merge strategy
-        logger.info("Syncing with remote (pull with merge)...")
+        # 4. Checkout main and force reset to remote
+        logger.info("Checking out main and syncing with remote...")
+        subprocess.run(["git", "checkout", "main"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "reset", "--hard", "origin/main"], check=True, capture_output=True, text=True)
+        logger.info("✓ Reset main to origin/main (hard)")
 
-        # Pull from remote with merge (in conflicts, prefer bot's changes)
-        # -X ours means: in conflict, keep "our" changes (bot)
-        # --no-rebase ensures we use merge, not rebase
-        # --allow-unrelated-histories handles Docker init case
+        # 5. Merge temp branch (prefer agent's changes in conflicts)
+        logger.info(f"Merging {temp_branch} into main...")
         result = subprocess.run(
-            ["git", "pull", "--no-rebase", "--allow-unrelated-histories", "-X", "ours", "origin", "main"],
+            ["git", "merge", temp_branch, "--no-ff", "-X", "ours", "-m", f"Merge agent changes: {message}"],
             capture_output=True,
             text=True
         )
 
-        # Log pull result (success or failure)
         if result.returncode == 0:
-            logger.info(f"Git pull successful: {result.stdout if result.stdout else result.stderr}")
+            logger.info(f"✓ Merge successful: {result.stdout if result.stdout else result.stderr}")
         else:
-            logger.warning(f"Git pull had issues: {result.stderr}")
-            # Even if pull fails, we'll try to push
+            logger.warning(f"Merge had issues: {result.stderr}")
+            # Continue to push anyway - might be just warnings
 
-        # Push to remote
+        # 6. Clean up temp branch
+        logger.info(f"Deleting temporary branch {temp_branch}...")
+        subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True, text=True)
+        logger.info(f"✓ Deleted {temp_branch}")
+
+        # 7. Push to remote
         logger.info("Pushing to remote...")
         result = subprocess.run(
-            ["git", "push", "--set-upstream", "origin", "main"],
+            ["git", "push", "origin", "main"],
             check=True,
             capture_output=True,
             text=True

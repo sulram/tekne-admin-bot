@@ -47,6 +47,7 @@ async def post_init(application) -> None:
     commands = [
         BotCommand("proposal", "✨ Criar ou editar propostas"),
         BotCommand("list", "📋 Listar propostas e gerar PDF"),
+        BotCommand("cost", "💰 Ver estatísticas de uso e custos"),
         BotCommand("reset", "🔄 Nova sessão (limpar conversa)"),
         BotCommand("help", "📖 Ver todos os comandos"),
     ]

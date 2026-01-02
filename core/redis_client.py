@@ -4,7 +4,6 @@ Provides connection pooling and graceful fallback
 """
 
 import logging
-import os
 from typing import Optional
 import redis
 from redis.exceptions import RedisError, ConnectionError
@@ -12,10 +11,6 @@ from redis.exceptions import RedisError, ConnectionError
 from config import REDIS_URL
 
 logger = logging.getLogger(__name__)
-
-# DEBUG: Print REDIS_URL at module import (using print for visibility before logging is configured)
-print(f"🔍🔍🔍 DEBUG redis_client.py: REDIS_URL from env = {os.getenv('REDIS_URL', 'NOT SET')}")
-print(f"🔍🔍🔍 DEBUG redis_client.py: REDIS_URL from config = {REDIS_URL}")
 
 # Global Redis client instance
 _redis_client: Optional[redis.Redis] = None
@@ -42,11 +37,9 @@ def get_redis_client() -> Optional[redis.Redis]:
     try:
         # Log connection attempt (hide password)
         safe_url = REDIS_URL.replace(REDIS_URL.split('@')[0].split(':')[-1], '****') if '@' in REDIS_URL else REDIS_URL
-        print(f"🔌🔌🔌 DEBUG: Attempting Redis connection to: {safe_url}")
         logger.info(f"🔌 Attempting Redis connection: {safe_url}")
 
         # Create connection pool
-        print(f"🔌🔌🔌 DEBUG: Creating Redis client from URL...")
         _redis_client = redis.from_url(
             REDIS_URL,
             decode_responses=True,  # Auto-decode to strings
@@ -57,23 +50,19 @@ def get_redis_client() -> Optional[redis.Redis]:
         )
 
         # Test connection
-        print(f"🔌🔌🔌 DEBUG: Testing connection with PING...")
         _redis_client.ping()
         _redis_available = True
 
-        print(f"✅✅✅ DEBUG: Redis connected successfully!")
         logger.info(f"✅ Redis connected: {safe_url}")
         return _redis_client
 
     except (RedisError, ConnectionError) as e:
-        print(f"❌❌❌ DEBUG: Redis connection failed: {type(e).__name__}: {e}")
         logger.error(f"❌ Redis connection failed: {type(e).__name__}: {e}")
         logger.error(f"   URL attempted: {safe_url}")
         _redis_available = False
         _redis_client = None
         return None
     except Exception as e:
-        print(f"❌❌❌ DEBUG: Unexpected Redis error: {type(e).__name__}: {e}")
         logger.error(f"❌ Unexpected Redis error: {type(e).__name__}: {e}")
         _redis_available = False
         _redis_client = None

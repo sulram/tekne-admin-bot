@@ -32,10 +32,6 @@ from agent.tools import (
 
 logger = logging.getLogger(__name__)
 
-# DEBUG: Print REDIS_URL at module import (VERY VISIBLE)
-print(f"🔍🔍🔍 DEBUG agent.py: REDIS_URL from env = {os.getenv('REDIS_URL', 'NOT SET')}")
-print(f"🔍🔍🔍 DEBUG agent.py: REDIS_URL from config = {REDIS_URL}")
-
 # Cache for CLAUDE.md instructions (loaded once at startup)
 _cached_instructions = None
 

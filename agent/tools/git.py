@@ -104,7 +104,7 @@ def commit_and_push_submodule(message: str) -> str:
         # 5. Merge temp branch (prefer agent's changes in conflicts)
         logger.info(f"Merging {temp_branch} into main...")
         result = subprocess.run(
-            ["git", "merge", temp_branch, "--no-ff", "-X", "ours", "-m", f"Merge agent changes: {message}"],
+            ["git", "merge", temp_branch, "--no-ff", "--allow-unrelated-histories", "-X", "ours", "-m", f"Merge agent changes: {message}"],
             capture_output=True,
             text=True
         )

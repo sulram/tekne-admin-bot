@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     fontconfig \
-    fonts-noto-cjk \
+    fonts-lxgw-wenkai \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Typst binary from official image
@@ -26,7 +26,7 @@ COPY --from=typst /bin/typst /usr/local/bin/typst
 RUN chmod +x /usr/local/bin/typst && typst --version
 
 # Install Space Grotesk font (required by proposal template)
-# Noto Sans CJK is already installed via apt (fonts-noto-cjk package)
+# LXGW WenKai (霞鹜文楷) is already installed via apt - traditional Kaiti-style font for CJK
 # Typst uses ~/.local/share/fonts for user fonts
 RUN mkdir -p /root/.local/share/fonts/space-grotesk && \
     cd /tmp && \
@@ -37,7 +37,7 @@ RUN mkdir -p /root/.local/share/fonts/space-grotesk && \
     rm -rf /tmp/space-grotesk /tmp/SpaceGrotesk-2.0.0.zip && \
     fc-cache -fv && \
     ls -lah /root/.local/share/fonts/space-grotesk/ && \
-    echo "✅ Fonts installed: Space Grotesk + Noto Sans CJK (via apt)"
+    echo "✅ Fonts installed: Space Grotesk + LXGW WenKai (Kaiti style)"
 
 # Install uv for faster Python package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

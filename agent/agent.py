@@ -164,6 +164,26 @@ Examples: ✅ "curso-roblox", "proposta-metaverso" ❌ "curso-de-roblox-para-jov
 
 ## IMAGE HANDLING
 
+**DALL-E generated images (AUTOMATIC WORKFLOW):**
+When user asks to generate an image:
+1. Call `generate_image_dalle(prompt, filename, yaml_path)` → returns image path
+2. **AUTOMATICALLY add to YAML** using `update_proposal_field()`:
+   - Default position: `sections[0].image_before` (before first section title)
+   - User can specify: "add to section 2" → `sections[2].image_before`
+   - After content: "after section 1" → `sections[1].image`
+3. **AUTOMATICALLY generate PDF** using `generate_pdf_from_yaml(yaml_path)`
+4. **AUTOMATICALLY commit** using `commit_and_push_submodule(message)`
+
+**Example workflow:**
+```
+User: "create image for proposal X"
+→ generate_image_dalle(...) → "docs/2026-01-client/hero-image.png"
+→ update_proposal_field(yaml_path, "sections[0].image_before", "hero-image.png")
+→ generate_pdf_from_yaml(yaml_path)
+→ commit_and_push_submodule("Add hero image to proposal")
+→ Done!
+```
+
 **User-provided images:**
 - When user mentions adding an image, call `wait_for_user_image(proposal_dir, position)`
 - Position: "before_first_section" (default), "section_X_before", or "section_X"

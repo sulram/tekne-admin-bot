@@ -15,8 +15,8 @@ services:
     volumes:
       # Persist proposal submodule (optional - if you want to keep proposals in container)
       - ./submodules/tekne-proposals:/app/submodules/tekne-proposals
-      # Persist cost tracking data
-      - ./data:/app/data
+      # Persist cost tracking data using named volume (survives deploys)
+      - tekne-data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'python main.py' || exit 1"]
       interval: 30s
@@ -28,3 +28,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  tekne-data:
+    # Named volume for persistent data (cost tracking, etc)
+    # This volume persists across container recreation and deploys

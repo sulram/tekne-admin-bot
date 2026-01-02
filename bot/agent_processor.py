@@ -62,6 +62,7 @@ class AgentProcessor:
         """
         pdf_generated = False
         pdf_path_detected = None
+        image_path_detected = None
 
         async def send_pdf_now(pdf_path_str: str):
             """Send PDF immediately when detected"""
@@ -82,9 +83,27 @@ class AgentProcessor:
             except Exception as e:
                 logger.error(f"Error sending PDF immediately: {e}", exc_info=True)
 
+        async def send_image_now(image_path_str: str):
+            """Send image immediately when detected"""
+            try:
+                image_full_path = Path(SUBMODULE_PATH) / image_path_str
+
+                if image_full_path.exists():
+                    logger.info(f"🖼️ Sending image immediately: {image_full_path}")
+                    with open(image_full_path, 'rb') as img_file:
+                        await self.update.message.reply_photo(
+                            photo=img_file,
+                            caption=f"🎨 {image_full_path.name}"
+                        )
+                    logger.info("✅ Image sent successfully")
+                else:
+                    logger.warning(f"Image not found: {image_full_path}")
+            except Exception as e:
+                logger.error(f"Error sending image immediately: {e}", exc_info=True)
+
         def status_callback(message: str):
             """Callback to send status messages in real-time"""
-            nonlocal pdf_generated, pdf_path_detected
+            nonlocal pdf_generated, pdf_path_detected, image_path_detected
             logger.info(f"Status callback received: {message}")
 
             # Check if PDF was generated and extract path
@@ -100,6 +119,20 @@ class AgentProcessor:
                     # Send PDF immediately via async task
                     self._loop.call_soon_threadsafe(
                         lambda: asyncio.create_task(send_pdf_now(pdf_path_detected))
+                    )
+
+            # Check if image was generated and extract path
+            if "Imagem gerada" in message:
+                logger.info("🎯 Image generation detected - extracting path...")
+
+                # Extract image path from message (docs/.../file.png)
+                image_match = re.search(r'docs/[^\s)]+\.(?:png|jpg|jpeg)', message)
+                if image_match:
+                    image_path_detected = image_match.group(0)
+                    logger.info(f"📍 Image path detected: {image_path_detected}")
+                    # Send image immediately via async task
+                    self._loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(send_image_now(image_path_detected))
                     )
 
             # Cancel progress when status message arrives

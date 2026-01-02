@@ -58,7 +58,13 @@ def generate_image_dalle(
     with open(img_path, "wb") as f:
         f.write(img_data)
 
-    return str(img_path.relative_to(SUBMODULE_PATH))
+    relative_path = str(img_path.relative_to(SUBMODULE_PATH))
+
+    # Send status with image path so it can be sent to user
+    send_status(f"✅ Imagem gerada! Caminho: {relative_path}")
+    logger.info(f"✅ DALL-E image generated: {relative_path}")
+
+    return relative_path
 
 
 @tool

@@ -35,6 +35,10 @@ def get_redis_client() -> Optional[redis.Redis]:
         return None
 
     try:
+        # Log connection attempt (hide password)
+        safe_url = REDIS_URL.replace(REDIS_URL.split('@')[0].split(':')[-1], '****') if '@' in REDIS_URL else REDIS_URL
+        logger.info(f"🔌 Attempting Redis connection: {safe_url}")
+
         # Create connection pool
         _redis_client = redis.from_url(
             REDIS_URL,
@@ -49,16 +53,17 @@ def get_redis_client() -> Optional[redis.Redis]:
         _redis_client.ping()
         _redis_available = True
 
-        logger.info(f"✅ Redis connected: {REDIS_URL}")
+        logger.info(f"✅ Redis connected: {safe_url}")
         return _redis_client
 
     except (RedisError, ConnectionError) as e:
-        logger.warning(f"⚠️  Redis unavailable ({e}), using file fallback")
+        logger.error(f"❌ Redis connection failed: {type(e).__name__}: {e}")
+        logger.error(f"   URL attempted: {safe_url}")
         _redis_available = False
         _redis_client = None
         return None
     except Exception as e:
-        logger.error(f"❌ Unexpected Redis error: {e}")
+        logger.error(f"❌ Unexpected Redis error: {type(e).__name__}: {e}")
         _redis_available = False
         _redis_client = None
         return None

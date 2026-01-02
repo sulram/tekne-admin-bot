@@ -4,6 +4,7 @@ Provides connection pooling and graceful fallback
 """
 
 import logging
+import os
 from typing import Optional
 import redis
 from redis.exceptions import RedisError, ConnectionError
@@ -11,6 +12,10 @@ from redis.exceptions import RedisError, ConnectionError
 from config import REDIS_URL
 
 logger = logging.getLogger(__name__)
+
+# Debug: Log environment variable at module import
+logger.info(f"🔍 DEBUG: REDIS_URL from env: {os.getenv('REDIS_URL', 'NOT SET')}")
+logger.info(f"🔍 DEBUG: REDIS_URL from config: {REDIS_URL}")
 
 # Global Redis client instance
 _redis_client: Optional[redis.Redis] = None

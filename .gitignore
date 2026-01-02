@@ -47,3 +47,7 @@ Thumbs.db
 
 # Cost tracking
 .cost_tracking.txt
+
+# Git temporary files
+*.diff
+*.patch

@@ -223,8 +223,8 @@ def get_agent_db():
     if redis_client is not None:
         logger.info("✅ Using RedisDb for agent memory")
         return RedisDb(
-            db_url=REDIS_URL,  # Correct parameter name per Agno docs
-            table_name="agent_sessions",
+            db_url=REDIS_URL,
+            session_table="agent_sessions",  # Correct parameter name per Agno docs
         )
     else:
         logger.warning("⚠️  Redis unavailable, using InMemoryDb (sessions won't persist)")

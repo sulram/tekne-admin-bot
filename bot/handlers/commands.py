@@ -209,17 +209,17 @@ async def list_proposals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         for line in lines:
             if line.strip() and '📄' in line:
                 # Extract the path from the line
-                # Example: "1. 📄 docs/2026-01-coca-cola/proposta-vr-bubble-experience.yml"
+                # Example: "1. 📄 2026-01-coca-cola/proposta-vr-bubble-experience.yml"
                 parts = line.split('📄')
                 if len(parts) >= 2:
                     number = parts[0].strip().rstrip('.')
-                    path = parts[1].strip()
+                    path = parts[1].strip().split('\n')[0].strip()  # Get first line only (path)
 
                     # Extract filename without extension for button label
                     filename = path.split('/')[-1].replace('.yml', '').replace('proposta-', '')
 
                     # Try to read the YAML file to get client name
-                    full_path = SUBMODULE_PATH / path
+                    full_path = SUBMODULE_PATH / "docs" / path
                     client_name = None
                     try:
                         if full_path.exists():

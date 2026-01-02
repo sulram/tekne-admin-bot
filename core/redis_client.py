@@ -19,7 +19,7 @@ print(f"🔍🔍🔍 DEBUG redis_client.py: REDIS_URL from config = {REDIS_URL}"
 
 # Global Redis client instance
 _redis_client: Optional[redis.Redis] = None
-_redis_available = False
+_redis_available = None  # None = not tried yet, True = connected, False = failed
 
 
 def get_redis_client() -> Optional[redis.Redis]:
@@ -36,7 +36,7 @@ def get_redis_client() -> Optional[redis.Redis]:
         return _redis_client
 
     # If we already tried and failed, don't retry on every call
-    if not _redis_available and _redis_client is None:
+    if _redis_available is False:  # Explicitly False, not None (which means not tried)
         return None
 
     try:

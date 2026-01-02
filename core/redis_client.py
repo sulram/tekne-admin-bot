@@ -13,9 +13,9 @@ from config import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
-# Debug: Log environment variable at module import
-logger.info(f"🔍 DEBUG: REDIS_URL from env: {os.getenv('REDIS_URL', 'NOT SET')}")
-logger.info(f"🔍 DEBUG: REDIS_URL from config: {REDIS_URL}")
+# DEBUG: Print REDIS_URL at module import (using print for visibility before logging is configured)
+print(f"🔍🔍🔍 DEBUG redis_client.py: REDIS_URL from env = {os.getenv('REDIS_URL', 'NOT SET')}")
+print(f"🔍🔍🔍 DEBUG redis_client.py: REDIS_URL from config = {REDIS_URL}")
 
 # Global Redis client instance
 _redis_client: Optional[redis.Redis] = None

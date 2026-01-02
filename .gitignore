@@ -45,8 +45,11 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
-# Cost tracking
+# Cost tracking and data
 .cost_tracking.txt
+data/*.txt
+data/*.json
+data/*.db
 
 # Git temporary files
 *.diff

@@ -14,7 +14,11 @@ PROJECT_ROOT = Path(__file__).parent
 SUBMODULE_PATH = PROJECT_ROOT / "submodules" / "tekne-proposals"
 DOCS_PATH = SUBMODULE_PATH / "docs"
 CLAUDE_MD_PATH = SUBMODULE_PATH / "CLAUDE.md"
-COST_TRACKING_FILE = PROJECT_ROOT / ".cost_tracking.txt"
+
+# Cost tracking - persisted in Docker volume
+DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR.mkdir(exist_ok=True)  # Ensure data directory exists
+COST_TRACKING_FILE = DATA_DIR / "cost_tracking.txt"
 
 # API Keys
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

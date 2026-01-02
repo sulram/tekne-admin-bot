@@ -23,12 +23,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       # Set these in Dokploy environment variables
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ALLOWED_USERS=${ALLOWED_USERS}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
       - PYTHONUNBUFFERED=1
       # Redis connection (with password)
       - REDIS_URL=redis://:${REDIS_PASSWORD:-tekne2024}@redis:6379/0

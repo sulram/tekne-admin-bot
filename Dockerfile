@@ -18,32 +18,26 @@ RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     fontconfig \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Typst binary from official image
 COPY --from=typst /bin/typst /usr/local/bin/typst
 RUN chmod +x /usr/local/bin/typst && typst --version
 
-# Install fonts (required by proposal template)
+# Install Space Grotesk font (required by proposal template)
+# Noto Sans CJK is already installed via apt (fonts-noto-cjk package)
 # Typst uses ~/.local/share/fonts for user fonts
-RUN mkdir -p /root/.local/share/fonts/space-grotesk /root/.local/share/fonts/noto && \
+RUN mkdir -p /root/.local/share/fonts/space-grotesk && \
     cd /tmp && \
-    # Install Space Grotesk (main font)
     wget -q https://github.com/floriankarsten/space-grotesk/releases/download/2.0.0/SpaceGrotesk-2.0.0.zip && \
     unzip -q SpaceGrotesk-2.0.0.zip -d space-grotesk && \
     find space-grotesk -name "*.otf" -exec cp {} /root/.local/share/fonts/space-grotesk/ \; && \
     find space-grotesk -name "*.ttf" -exec cp {} /root/.local/share/fonts/space-grotesk/ \; && \
     rm -rf /tmp/space-grotesk /tmp/SpaceGrotesk-2.0.0.zip && \
-    # Install Noto Sans CJK TC (Traditional Chinese fallback)
-    wget -q https://github.com/notofonts/noto-cjk/releases/download/Sans2.004/08_NotoSansCJKtc.zip && \
-    unzip -q 08_NotoSansCJKtc.zip -d noto-tc && \
-    find noto-tc -name "*.otf" -exec cp {} /root/.local/share/fonts/noto/ \; && \
-    rm -rf /tmp/noto-tc /tmp/08_NotoSansCJKtc.zip && \
-    # Refresh font cache
     fc-cache -fv && \
     ls -lah /root/.local/share/fonts/space-grotesk/ && \
-    ls -lah /root/.local/share/fonts/noto/ && \
-    echo "✅ Fonts installed: Space Grotesk + Noto Sans CJK TC"
+    echo "✅ Fonts installed: Space Grotesk + Noto Sans CJK (via apt)"
 
 # Install uv for faster Python package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

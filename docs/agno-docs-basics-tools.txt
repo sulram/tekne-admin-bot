@@ -1,0 +1,4293 @@
+### FILE: ./agent.mdx ###
+
+---
+title: Agent Tools
+sidebarTitle: Overview
+description: Learn how to use tools in Agno to build AI agents.
+---
+
+**Agents use tools to take actions and interact with external systems**.
+
+Tools are functions that an Agent can run to achieve tasks. For example: searching the web, running SQL, sending an email or calling APIs. You can use any python function as a tool or use a pre-built Agno **toolkit**.
+
+The general syntax is:
+
+```python
+from agno.agent import Agent
+
+agent = Agent(
+    # Add functions or Toolkits
+    tools=[...],
+)
+```
+
+## Using a Toolkit
+
+Agno provides many pre-built **toolkits** that you can add to your Agents. For example, let's use the DuckDuckGo toolkit to search the web.
+
+<Tip>
+  You can find more toolkits in the [Toolkits](/integrations/toolkits) guide.
+</Tip>
+
+<Steps>
+  <Step title="Create Web Search Agent">
+    Create a file `web_search.py`
+
+    ```python web_search.py
+    from agno.agent import Agent
+    from agno.tools.duckduckgo import DuckDuckGoTools
+
+    agent = Agent(tools=[DuckDuckGoTools()], markdown=True)
+    agent.print_response("Whats happening in France?", stream=True)
+    ```
+
+  </Step>
+  <Step title="Run the agent">
+    Install libraries
+
+    ```shell
+    pip install openai ddgs agno
+    ```
+
+    Run the agent
+
+    ```shell
+    python web_search.py
+    ```
+
+  </Step>
+</Steps>
+
+## Writing your own Tools
+
+For more control, write your own python functions and add them as tools to an Agent. For example, here's how to add a `get_top_hackernews_stories` tool to an Agent.
+
+```python hn_agent.py
+import json
+import httpx
+
+from agno.agent import Agent
+
+def get_top_hackernews_stories(num_stories: int = 10) -> str:
+    """Use this function to get top stories from Hacker News.
+
+    Args:
+        num_stories (int): Number of stories to return. Defaults to 10.
+    """
+
+    # Fetch top story IDs
+    response = httpx.get('https://hacker-news.firebaseio.com/v0/topstories.json')
+    story_ids = response.json()
+
+    # Fetch story details
+    stories = []
+    for story_id in story_ids[:num_stories]:
+        story_response = httpx.get(f'https://hacker-news.firebaseio.com/v0/item/{story_id}.json')
+        story = story_response.json()
+        if "text" in story:
+            story.pop("text", None)
+        stories.append(story)
+    return json.dumps(stories)
+
+agent = Agent(tools=[get_top_hackernews_stories], markdown=True)
+agent.print_response("Summarize the top 5 stories on hackernews?", stream=True)
+```
+
+Read more about:
+
+- [Available toolkits](/integrations/toolkits)
+- [Creating your own tools](/basics/tools/creating-tools/overview)
+
+## Developer Resources
+
+- View the [Agent schema](/reference/agents/agent)
+- View the [Knowledge schema](/reference/knowledge/knowledge)
+- View [Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/08_knowledge/)
+
+### FILE: ./async-tools.mdx ###
+
+---
+title: Async Tools
+description: Learn how to use async tools in Agno.
+mode: wide
+---
+
+### FILE: ./attaching-tools.mdx ###
+
+---
+title: Updating an Agent's Tools
+sidebarTitle: Updating an Agent's Tools
+description: Learn how to add/update tools on Agents and Teams after they have been created.
+---
+
+Tools can be added to Agents and Teams post-creation. This gives you the flexibility to add tools to an existing Agent or Team instance after initialization, which is useful for dynamic tool management or when you need to conditionally add tools based on runtime requirements.
+The whole collection of tools available to an Agent or Team can also be updated by using the `set_tools` call. Note that this will remove any other tools already assigned to your Agent or Team and override it with the list of tools provided to `set_tools`.
+
+## Agent Example
+
+Create your own tool, for example `get_weather`. Then call `add_tool` to attach it to your Agent.
+
+```python add_agent_tool_post_initialization.py
+import random
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools import tool
+
+
+@tool(stop_after_tool_call=True)
+def get_weather(city: str) -> str:
+    """Get the weather for a city."""
+    # In a real implementation, this would call a weather API
+    weather_conditions = ["sunny", "cloudy", "rainy", "snowy", "windy"]
+    random_weather = random.choice(weather_conditions)
+
+    return f"The weather in {city} is {random_weather}."
+
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    markdown=True,
+)
+
+agent.print_response("What can you do?", stream=True)
+
+agent.add_tool(get_weather)
+
+agent.print_response("What is the weather in San Francisco?", stream=True)
+```
+
+# Team Example
+
+Create a list of tools, and assign them to your Team with `set_tools`
+
+```python add_team_tool_post_initialization.py
+import random
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.team.team import Team
+from agno.tools import tool
+from agno.tools.calculator import CalculatorTools
+
+
+agent1 = Agent(
+    name="Stock Searcher",
+    model=OpenAIChat("gpt-5-mini"),
+)
+
+agent2 = Agent(
+    name="Company Info Searcher",
+    model=OpenAIChat("gpt-5-mini"),
+)
+
+team = Team(
+    name="Stock Research Team",
+    model=OpenAIChat("gpt-5-mini"),
+    members=[agent1, agent2],
+    tools=[CalculatorTools()],
+    markdown=True,
+    show_members_responses=True,
+)
+
+
+@tool
+def get_stock_price(stock_symbol: str) -> str:
+    """Get the current stock price of a stock."""
+    return f"The current stock price of {stock_symbol} is {random.randint(100, 1000)}."
+
+@tool
+def get_stock_availability(stock_symbol: str) -> str:
+    """Get the current availability of a stock."""
+    return f"The current stock available of {stock_symbol} is {random.randint(100, 1000)}."
+
+
+team.set_tools([get_stock_price, get_stock_availability])
+
+team.print_response("What is the current stock price of NVDA?", stream=True)
+team.print_response("How much stock NVDA stock is available?", stream=True)
+
+```
+
+<Tip>
+
+- The `add_tool` method allows you to dynamically extend an Agent's or a Team's capabilities. This is particularly useful when you want to add tools based on user input or other runtime conditions.
+- The `set_tool` method allows you to override an Agent's or a Team's capabilities. Note that this will remove any existing tools previously assigned to your Agent or Team.
+
+</Tip>
+
+## Developer Resources
+
+- [Creating your own tools](/basics/tools/creating-tools/overview) - Learn how to create custom tools
+- [Available Toolkits](/integrations/toolkits/overview) - Explore pre-built toolkits
+- [Selecting Tools](/basics/tools/selecting-tools) - Learn how to filter tools in toolkits
+
+### FILE: ./caching.mdx ###
+
+---
+title: Tool Result Caching
+description: Learn how to cache tool results in Agno.
+---
+
+Tool result caching is designed to avoid unnecessary recomputation by storing the results of function calls on disk. 
+This is useful during development and testing to speed up the development process, avoid rate limiting, and reduce costs.
+
+<Check>
+This is supported for all Agno Toolkits
+</Check>
+
+## On Toolkit
+
+Pass `cache_results=True` to the Toolkit constructor to enable caching for that Toolkit.
+
+```python cache_tool_calls.py
+import asyncio
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.yfinance import YFinanceTools
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools(cache_results=True), YFinanceTools(cache_results=True)],
+)
+
+asyncio.run(
+    agent.aprint_response(
+        "What is the current stock price of AAPL and latest news on 'Apple'?",
+        markdown=True,
+    )
+)
+```
+
+## On @tool
+
+Pass `cache_results=True` to the `@tool` decorator to enable caching for that tool.
+
+```python cache_tool_calls.py
+from agno.tools import tool
+
+@tool(cache_results=True)
+def get_stock_price(ticker: str) -> str:
+    """Get the current stock price of a given ticker"""
+
+    # ... Long running operation
+
+    return f"The current stock price of {ticker} is 100"
+```
+
+### FILE: ./creating-tools/overview.mdx ###
+
+---
+title: Creating your own tools
+sidebarTitle: Overview
+description: Learn how to write your own tools and how to use the `@tool` decorator to modify the behavior of a tool.
+---
+
+In most production cases, you will need to write your own tools. Which is why we're focused on provide the best tool-use experience in Agno.
+
+The rule is simple:
+
+- Any Python function can be used as a tool by an Agent.
+- Use the `@tool` decorator to modify what happens before and after this tool is called.
+
+There are two main ways to create tools in Agno:
+1. Create a python function (optionally using the `@tool` decorator)
+2. Create a Toolkit
+
+## Learn more
+
+<CardGroup>
+  <Card title="Python Functions as Tools" href="/basics/tools/creating-tools/python-functions">
+    Learn how to create tools with python functions.
+  </Card>
+  <Card title="Toolkits" href="/basics/tools/creating-tools/toolkits">
+    Learn how to create tools with toolkits.
+  </Card>
+</CardGroup>
+### FILE: ./creating-tools/python-functions.mdx ###
+
+---
+title: Python Functions as Tools
+sidebarTitle: Python Functions as Tools
+description: Learn how to create tools with python functions.
+---
+
+Any python function can be used as a tool by an Agent.
+
+For example, here's how to use a `get_top_hackernews_stories` function as a tool:
+
+```python hn_agent.py
+import json
+import httpx
+
+from agno.agent import Agent
+
+def get_top_hackernews_stories(num_stories: int = 10) -> str:
+    """
+    Use this function to get top stories from Hacker News.
+
+    Args:
+        num_stories (int): Number of stories to return. Defaults to 10.
+
+    Returns:
+        str: JSON string of top stories.
+    """
+
+    # Fetch top story IDs
+    response = httpx.get('https://hacker-news.firebaseio.com/v0/topstories.json')
+    story_ids = response.json()
+
+    # Fetch story details
+    stories = []
+    for story_id in story_ids[:num_stories]:
+        story_response = httpx.get(f'https://hacker-news.firebaseio.com/v0/item/{story_id}.json')
+        story = story_response.json()
+        if "text" in story:
+            story.pop("text", None)
+        stories.append(story)
+    return json.dumps(stories)
+
+agent = Agent(tools=[get_top_hackernews_stories], markdown=True)
+agent.print_response("Summarize the top 5 stories on hackernews?", stream=True)
+```
+
+## Accessing built-in parameters in Tools
+
+Agno automatically injects some built-in parameters into your tool functions, so you can easily gain access to important information and objects in your tools.
+
+These built-in parameters are:
+- `run_context`: The run context object from where you can access the session state, dependencies, metadata, etc.
+- `agent`: The agent object.
+- `team`: The team object.
+- `images`: The images object.
+- `videos`: The videos object.
+- `audio`: The audio object.
+- `files`: The files object.
+
+For example to access agent in a tool, you can do:
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+def get_agent_model(agent: Agent) -> str:
+    """Get the model of the agent."""
+    return agent.model.id
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[get_agent_model],
+)
+
+agent.print_response("What is the model of the agent?", stream=True)
+```
+
+See [Tool Built-in Parameters](/basics/tools/overview#tool-built-in-parameters) for more details on `run_context`, `agent`, `team`, and media parameters.
+
+## Magic of the @tool decorator
+
+To modify the behavior of a tool, use the `@tool` decorator. Some notable features:
+
+- `requires_confirmation=True`: Requires user confirmation before execution.
+- `requires_user_input=True`: Requires user input before execution. Use `user_input_fields` to specify which fields require user input.
+- `external_execution=True`: The tool will be executed outside of the agent's control.
+- `show_result=True`: Show the output of the tool call in the Agent's response, `True` by default. Without this flag, the result of the tool call is sent to the model for further processing.
+- `stop_after_tool_call=True`: Stop the agent run after the tool call.
+- `tool_hooks`: Run custom logic before and after this tool call.
+- `cache_results=True`: Cache the tool result to avoid repeating the same call. Use `cache_dir` and `cache_ttl` to configure the cache.
+
+Here's an example that uses many possible parameters on the `@tool` decorator.
+
+```python advanced_tool.py
+import httpx
+from agno.agent import Agent
+from agno.tools import tool
+from typing import Any, Callable, Dict
+
+def logger_hook(function_name: str, function_call: Callable, arguments: Dict[str, Any]):
+    """Hook function that wraps the tool execution"""
+    print(f"About to call {function_name} with arguments: {arguments}")
+    result = function_call(**arguments)
+    print(f"Function call completed with result: {result}")
+    return result
+
+@tool(
+    name="fetch_hackernews_stories",                # Custom name for the tool (otherwise the function name is used)
+    description="Get top stories from Hacker News",  # Custom description (otherwise the function docstring is used)
+    stop_after_tool_call=True,                      # Return the result immediately after the tool call and stop the agent
+    tool_hooks=[logger_hook],                       # Hook to run before and after execution
+    requires_confirmation=True,                     # Requires user confirmation before execution
+    cache_results=True,                             # Enable caching of results
+    cache_dir="/tmp/agno_cache",                    # Custom cache directory
+    cache_ttl=3600                                  # Cache TTL in seconds (1 hour)
+)
+def get_top_hackernews_stories(num_stories: int = 5) -> str:
+    """
+    Fetch the top stories from Hacker News.
+
+    Args:
+        num_stories: Number of stories to fetch (default: 5)
+
+    Returns:
+        str: The top stories in text format
+    """
+    # Fetch top story IDs
+    response = httpx.get("https://hacker-news.firebaseio.com/v0/topstories.json")
+    story_ids = response.json()
+
+    # Get story details
+    stories = []
+    for story_id in story_ids[:num_stories]:
+        story_response = httpx.get(f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json")
+        story = story_response.json()
+        stories.append(f"{story.get('title')} - {story.get('url', 'No URL')}")
+
+    return "\n".join(stories)
+
+agent = Agent(tools=[get_top_hackernews_stories])
+agent.print_response("Show me the top news from Hacker News")
+```
+
+See the [@tool Decorator Reference](/reference/tools/decorator) for more details.
+### FILE: ./creating-tools/toolkits.mdx ###
+
+---
+title: Custom Toolkits
+sidebarTitle: Custom Toolkits
+description: Learn how to write your own toolkits.
+---
+
+Many advanced use-cases will require writing custom Toolkits. A Toolkit is a collection of functions that can be added to an Agent. The functions in a Toolkit are designed to work together, share internal state and provide a better development experience.
+
+Here's the general flow:
+
+1. Create a class inheriting the `agno.tools.Toolkit` class.
+2. Add your functions to the class.
+3. Include all the functions in the `tools` argument to the `Toolkit` constructor.
+
+For example:
+
+```python shell_toolkit.py
+from typing import List
+
+from agno.agent import Agent
+from agno.tools import Toolkit
+from agno.utils.log import logger
+
+class ShellTools(Toolkit):
+    def __init__(self, working_directory: str = "/", **kwargs):
+        self.working_directory = working_directory
+
+        tools = [
+            self.run_shell_command,
+        ]
+
+        super().__init__(name="shell_tools", tools=tools, **kwargs)
+    
+    def list_files(self, directory: str):
+        """
+        List the files in the given directory.
+
+        Args:
+            directory (str): The directory to list the files from.
+        Returns:
+            str: The list of files in the directory.
+        """
+        import os
+
+        # List files relative to the toolkit's working_directory
+        path = os.path.join(self.working_directory, directory)
+        try:
+            files = os.listdir(path)
+            return "\n".join(files)
+        except Exception as e:
+            logger.warning(f"Failed to list files in {path}: {e}")
+            return f"Error: {e}"
+        return os.listdir(directory)
+
+    def run_shell_command(self, args: List[str], tail: int = 100) -> str:
+        """
+        Runs a shell command and returns the output or error.
+
+        Args:
+            args (List[str]): The command to run as a list of strings.
+            tail (int): The number of lines to return from the output.
+        Returns:
+            str: The output of the command.
+        """
+        import subprocess
+
+        logger.info(f"Running shell command: {args}")
+        try:
+            logger.info(f"Running shell command: {args}")
+            result = subprocess.run(args, capture_output=True, text=True, cwd=self.working_directory)
+            logger.debug(f"Result: {result}")
+            logger.debug(f"Return code: {result.returncode}")
+            if result.returncode != 0:
+                return f"Error: {result.stderr}"
+            # return only the last n lines of the output
+            return "\n".join(result.stdout.split("\n")[-tail:])
+        except Exception as e:
+            logger.warning(f"Failed to run shell command: {e}")
+            return f"Error: {e}"
+
+agent = Agent(tools=[ShellTools()], markdown=True)
+agent.print_response("List all the files in my home directory.")
+
+```
+
+<Tip>
+Important Tips:
+- Fill in the docstrings for each function with detailed descriptions of the function and its arguments.
+- Remember that this function is provided to the LLM and is not used elsewhere in code, so the docstring should make sense to an LLM and the name of the functions need to be descriptive.
+</Tip>
+
+See the [Toolkit Reference](/reference/tools/toolkit) for more details.
+### FILE: ./exceptions.mdx ###
+
+---
+title: Exceptions & Retries
+sidebarTitle: Exceptions & Retries
+description: Learn how to use exceptions and retries to control the behavior of your tools.
+keywords: [exceptions, retries, tool calls, tool call loop, agent run, agent run status, agent run completion]
+---
+
+If after a tool call you need to provide feedback to the model to change its behavior or exit the tool call loop, you can raise one of the following exceptions:
+
+- `RetryAgentRun`: Use this exception when you want to provide instructions to the model for how to change its behavior and have the model retry the tool call. The exception message will be passed to the model as a tool call error, allowing the model to retry or adjust its approach in the next iteration of the LLM loop. 
+
+<Note>This does not retry the full agent run—it only provides feedback to the model within the current run.</Note>
+
+- `StopAgentRun`: Use this exception when you want to exit the model execution loop and end the agent run. When raised from a tool function, the agent exits the tool call loop, and the run status is set to `COMPLETED`. All session state, messages, tool calls, and tool results up to that point are stored in the database. 
+
+<Note>This does not cancel the agent run. It completes the run after exiting the tool call loop.</Note>
+
+## Using RetryAgentRun
+
+This example shows how to use the `RetryAgentRun` exception to provide feedback to the model, allowing it to adjust its behavior:
+
+```python retry_in_tool_call.py
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from agno.exceptions import RetryAgentRun
+from agno.models.openai import OpenAIChat
+from agno.utils.log import logger
+from agno.run import RunContext
+
+
+def add_item(run_context: RunContext, item: str) -> str:
+    """Add an item to the shopping list."""
+    if not run_context.session_state:
+        run_context.session_state = {}
+    
+    if "shopping_list" not in run_context.session_state:
+        run_context.session_state["shopping_list"] = []
+    
+    run_context.session_state["shopping_list"].append(item)
+    len_shopping_list = len(run_context.session_state["shopping_list"])
+    
+    if len_shopping_list < 3:
+        raise RetryAgentRun(
+            f"Shopping list is: {run_context.session_state['shopping_list']}. Minimum 3 items in the shopping list. "
+            + f"Add {3 - len_shopping_list} more items.",
+        )
+    
+    logger.info(f"The shopping list is now: {run_context.session_state.get('shopping_list')}")
+    return f"The shopping list is now: {run_context.session_state.get('shopping_list')}"
+
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    session_id="retry_example_session",
+    db=SqliteDb(
+        session_table="retry_example_session",
+        db_file="tmp/retry_example.db",
+    ),
+    # Initialize the session state with empty shopping list
+    session_state={"shopping_list": []},
+    tools=[add_item],
+    markdown=True,
+)
+agent.print_response("Add milk", stream=True)
+print(f"Final session state: {agent.get_session_state(session_id='retry_example_session')}")
+```
+
+In this example, when `add_item` is called with fewer than 3 items, it raises `RetryAgentRun` with instructions. The model receives this as a tool call error and can call `add_item` again with additional items to meet the requirement.
+
+## Using StopAgentRun
+
+This example shows how to use the `StopAgentRun` exception to exit the tool call loop:
+
+```python stop_in_tool_call.py
+from agno.agent import Agent
+from agno.exceptions import StopAgentRun
+from agno.models.openai import OpenAIChat
+from agno.run import RunContext
+
+
+def check_condition(run_context: RunContext, value: int) -> str:
+    """Check a condition and stop tool calls if met."""
+    if value > 100:
+        raise StopAgentRun(
+            f"Value {value} exceeds threshold. Stopping tool call execution."
+        )
+    return f"Value {value} is acceptable."
+
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[check_condition],
+    markdown=True,
+)
+
+# When the model calls check_condition with value > 100,
+# the tool call loop will exit and the run will complete
+agent.print_response("Use the check_condition tool to check if 150 is acceptable", stream=True)
+```
+
+In this example, when `check_condition` is called with a value greater than 100, it raises `StopAgentRun`. The tool call loop exits immediately, and the run completes with status `COMPLETED`. All session state, messages, and tool calls up to that point are stored in the database.
+
+<Tip>
+Make sure to set `AGNO_DEBUG=True` if you want to see the debug logs.
+</Tip>
+
+## Developer Resources
+
+- View the [RetryAgentRun schema](/reference/tools/retry-agent-run)
+- View the [StopAgentRun schema](/reference/tools/stop-agent-run)
+- View [Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/14_tools/exceptions)
+
+### FILE: ./hooks.mdx ###
+
+---
+title: Tool Hooks
+sidebarTitle: Tool Hooks
+description: Learn how to use tool hooks to modify the behavior of a tool.
+---
+
+You can use tool hooks to perform validation, logging, or any other logic before or after a tool is called.
+
+A tool hook is a function that takes a function name, function call, and arguments. Optionally, you can access the `Agent` or `Team` object as well.  Inside the tool hook, you have to call the function call and return the result.
+
+<Note>
+It is important to use exact parameter names when defining a tool hook. `agent`, `team`, `run_context`, `function_name`, `function_call`, and `arguments` are available parameters.
+</Note>
+
+For example:
+
+```python
+def logger_hook(
+    function_name: str, function_call: Callable, arguments: Dict[str, Any]
+):
+    """Log the duration of the function call"""
+    start_time = time.time()
+
+    # Call the function
+    result = function_call(**arguments)
+
+    end_time = time.time()
+    duration = end_time - start_time
+
+    logger.info(f"Function {function_name} took {duration:.2f} seconds to execute")
+
+    # Return the result
+    return result
+```
+
+or
+
+```python
+def confirmation_hook(
+    function_name: str, function_call: Callable, arguments: Dict[str, Any]
+):
+    """Confirm the function call"""
+    if function_name != "get_top_hackernews_stories":
+        raise ValueError("This tool is not allowed to be called")
+    return function_call(**arguments)
+```
+
+You can assign tool hooks on agents and teams.  The tool hooks will be applied to all tool calls made by the agent or team.
+
+For example:
+
+```python
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools()],
+    tool_hooks=[logger_hook],
+)
+```
+
+You can also get access to the `RunContext` object in the tool hook. Inside the run context, you will find the session state, dependencies, and metadata.
+
+```python
+from agno.run import RunContext
+
+def grab_customer_profile_hook(
+    run_context: RunContext, function_name: str, function_call: Callable, arguments: Dict[str, Any]
+):
+    if not run_context.session_state:
+        run_context.session_state = {}
+
+    cust_id = arguments.get("customer")
+    if cust_id not in run_context.session_state["customer_profiles"]:
+        raise ValueError(f"Customer profile for {cust_id} not found")
+    customer_profile = run_context.session_state["customer_profiles"][cust_id]
+
+    # Replace the customer with the customer_profile for the function call
+    arguments["customer"] = json.dumps(customer_profile)
+    # Call the function with the updated arguments
+    result = function_call(**arguments)
+
+    return result
+```
+
+### Multiple Tool Hooks
+
+You can also assign multiple tool hooks at once. They will be applied in the order they are assigned.
+
+```python
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools()],
+    tool_hooks=[logger_hook, confirmation_hook],  # The logger_hook will run on the outer layer, and the confirmation_hook will run on the inner layer
+)
+```
+
+You can also assign tool hooks to specific custom tools.
+
+```python
+@tool(tool_hooks=[logger_hook, confirmation_hook])
+def get_top_hackernews_stories(num_stories: int) -> Iterator[str]:
+    """Fetch top stories from Hacker News.
+
+    Args:
+        num_stories (int): Number of stories to retrieve
+    """
+    # Fetch top story IDs
+    response = httpx.get("https://hacker-news.firebaseio.com/v0/topstories.json")
+    story_ids = response.json()
+
+    # Yield story details
+    final_stories = []
+    for story_id in story_ids[:num_stories]:
+        story_response = httpx.get(
+            f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
+        )
+        story = story_response.json()
+        if "text" in story:
+            story.pop("text", None)
+        final_stories.append(story)
+
+    return json.dumps(final_stories)
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[get_top_hackernews_stories],
+)
+```
+
+## Pre and Post Hooks
+
+Pre and post hooks let's you modify what happens before and after a tool is called. It is an alternative to tool hooks.
+
+Set the `pre_hook` in the `@tool` decorator to run a function before the tool call.
+
+Set the `post_hook` in the `@tool` decorator to run a function after the tool call.
+
+Here's a demo example of using a `pre_hook`, `post_hook` along with Agent Context.
+
+```python pre_and_post_hooks.py
+import json
+from typing import Iterator
+
+import httpx
+from agno.agent import Agent
+from agno.tools import FunctionCall, tool
+
+
+def pre_hook(fc: FunctionCall):
+    print(f"Pre-hook: {fc.function.name}")
+    print(f"Arguments: {fc.arguments}")
+    print(f"Result: {fc.result}")
+
+
+def post_hook(fc: FunctionCall):
+    print(f"Post-hook: {fc.function.name}")
+    print(f"Arguments: {fc.arguments}")
+    print(f"Result: {fc.result}")
+
+
+@tool(pre_hook=pre_hook, post_hook=post_hook)
+def get_top_hackernews_stories(agent: Agent) -> Iterator[str]:
+    num_stories = agent.context.get("num_stories", 5) if agent.context else 5
+
+    # Fetch top story IDs
+    response = httpx.get("https://hacker-news.firebaseio.com/v0/topstories.json")
+    story_ids = response.json()
+
+    # Yield story details
+    for story_id in story_ids[:num_stories]:
+        story_response = httpx.get(
+            f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
+        )
+        story = story_response.json()
+        if "text" in story:
+            story.pop("text", None)
+        yield json.dumps(story)
+
+
+agent = Agent(
+    dependencies={
+        "num_stories": 2,
+    },
+    tools=[get_top_hackernews_stories],
+    markdown=True,
+)
+agent.print_response("What are the top hackernews stories?", stream=True)
+```
+
+### FILE: ./mcp/mcp-toolbox.mdx ###
+
+---
+title: MCP Toolbox
+sidebarTitle: MCP Toolbox
+description: Learn how to use MCPToolbox with Agno to connect to MCP Toolbox for Databases with tool filtering capabilities.
+---
+
+
+<Badge icon="code-branch" color="orange">
+    <Tooltip tip="Introduced in v2.0.9" cta="View release notes" href="https://github.com/agno-agi/agno/releases/tag/v2.0.9">v2.0.9</Tooltip>
+</Badge>
+
+
+**MCPToolbox** enables Agents to connect to Google's [MCP Toolbox for Databases](https://googleapis.github.io/genai-toolbox/getting-started/introduction/) with advanced filtering capabilities. It extends Agno's `MCPTools` functionality to filter tools by toolset or tool name, allowing agents to load only the specific database tools they need.
+
+## Prerequisites
+
+You'll need the following to use MCPToolbox:
+
+```bash
+pip install toolbox-core
+```
+
+Our default setup will also require you to have Docker or Podman installed, to run the MCP Toolbox server and database for the examples.
+
+## Quick Start
+
+Get started with MCPToolbox instantly using our fully functional demo.
+
+```bash
+# Clone the repo and navigate to the demo folder
+git clone https://github.com/agno-agi/agno.git
+cd agno/cookbook/14_tools/mcp/mcp_toolbox_demo
+
+# Start the database and MCP Toolbox servers
+
+# With Docker and Docker Compose
+docker-compose up -d
+
+# With Podman
+podman compose up -d
+
+# Install dependencies
+uv sync
+
+# Set your API key and run the basic agent
+export OPENAI_API_KEY="your_openai_api_key"
+uv run agent.py
+```
+
+This starts a PostgreSQL database with sample hotel data and an MCP Toolbox server that exposes database operations as filtered tools.
+
+## Verification
+
+To verify that your docker/podman setup is working correctly, you can check the database connection:
+
+```bash
+# Using Docker Compose
+docker-compose exec db psql -U toolbox_user -d toolbox_db -c "SELECT COUNT(*) FROM hotels;"
+
+# Using Podman
+podman exec db psql -U toolbox_user -d toolbox_db -c "SELECT COUNT(*) FROM hotels;"
+```
+
+## Basic Example
+
+Here's the simplest way to use MCPToolbox (after running the Quick Start setup):
+
+```python
+import asyncio
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp_toolbox import MCPToolbox
+
+async def main():
+    # Connect to the running MCP Toolbox server and filter to hotel tools only
+    async with MCPToolbox(
+        url="http://127.0.0.1:5001",
+        toolsets=["hotel-management"]  # Only load hotel search tools
+    ) as toolbox:
+        agent = Agent(
+            model=OpenAIChat(),
+            tools=[toolbox],
+            instructions="You help users find hotels. Always mention hotel ID, name, location, and price tier."
+        )
+
+        # Ask the agent to find hotels
+        await agent.aprint_response("Find luxury hotels in Zurich")
+
+# Run the example
+asyncio.run(main())
+```
+
+## How MCPToolbox Works
+
+MCPToolbox solves the **tool overload problem**. Without filtering, your agent gets overwhelmed with too many database tools:
+
+**Without MCPToolbox (50+ tools):**
+```python
+# Agent gets ALL database tools - overwhelming!
+tools = MCPTools(url="http://127.0.0.1:5001")  # 50+ tools
+```
+
+**With MCPToolbox (3 relevant tools):**
+```python
+# Agent gets only hotel management tools - focused!
+tools = MCPToolbox(url="http://127.0.0.1:5001", toolsets=["hotel-management"])  # 3 tools
+```
+
+**The flow:**
+1. MCP Toolbox Server exposes 50+ database tools
+2. MCPToolbox connects and loads ALL tools internally
+3. Filters to only the `hotel-management` toolset (3 tools)
+4. Agent sees only the 3 relevant tools and stays focused
+
+## Advanced Usage
+
+### Multiple Toolsets
+
+Load tools from multiple related toolsets:
+
+```python cookbook/14_tools/mcp/mcp_toolbox_for_db.py
+import asyncio
+from textwrap import dedent
+from agno.agent import Agent
+from agno.tools.mcp_toolbox import MCPToolbox
+
+url = "http://127.0.0.1:5001"
+
+async def run_agent(message: str = None) -> None:
+    """Run an interactive CLI for the Hotel agent with the given message."""
+
+    async with MCPToolbox(
+        url=url, toolsets=["hotel-management", "booking-system"]
+    ) as db_tools:
+        print(db_tools.functions)  # Print available tools for debugging
+        agent = Agent(
+            tools=[db_tools],
+            instructions=dedent(
+                """ \
+                You're a helpful hotel assistant. You handle hotel searching, booking and
+                cancellations. When the user searches for a hotel, mention it's name, id,
+                location and price tier. Always mention hotel ids while performing any
+                searches. This is very important for any operations. For any bookings or
+                cancellations, please provide the appropriate confirmation. Be sure to
+                update checkin or checkout dates if mentioned by the user.
+                Don't ask for confirmations from the user.
+            """
+            ),
+            markdown=True,
+            show_tool_calls=True,
+            add_history_to_messages=True,
+            debug_mode=True,
+        )
+
+        await agent.acli_app(message=message, stream=True)
+
+if __name__ == "__main__":
+    asyncio.run(run_agent(message=None))
+```
+
+### Custom Authentication and Parameters
+
+For production scenarios with authentication:
+
+```python
+async def production_example():
+    async with MCPToolbox(url=url) as toolbox:
+        # Load with authentication and bound parameters
+        hotel_tools = await toolbox.load_toolset(
+            "hotel-management",
+            auth_token_getters={"hotel_api": lambda: "your-hotel-api-key"},
+            bound_params={"region": "us-east-1"},
+        )
+
+        booking_tools = await toolbox.load_toolset(
+            "booking-system",
+            auth_token_getters={"booking_api": lambda: "your-booking-api-key"},
+            bound_params={"environment": "production"},
+        )
+
+        # Use individual tools instead of the toolbox
+        all_tools = hotel_tools + booking_tools[:2]  # First 2 booking tools only
+
+        agent = Agent(tools=all_tools, instructions="Hotel management with auth.")
+        await agent.aprint_response("Book a hotel for tonight")
+```
+
+### Manual Connection Management
+
+For explicit control over connections:
+
+```python
+async def manual_connection_example():
+    # Initialize without auto-connection
+    toolbox = MCPToolbox(url=url, toolsets=["hotel-management"])
+
+    try:
+        await toolbox.connect()
+        agent = Agent(
+            tools=[toolbox],
+            instructions="Hotel search assistant.",
+            markdown=True
+        )
+        await agent.aprint_response("Show me hotels in Basel")
+    finally:
+        await toolbox.close()  # Always clean up
+```
+
+## Toolkit Params
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | `str` | - | Base URL for the toolbox service (automatically appends "/mcp" if missing) |
+| `toolsets` | `Optional[List[str]]` | `None` | List of toolset names to filter tools by. Cannot be used with `tool_name`. |
+| `tool_name` | `Optional[str]` | `None` | Single tool name to load. Cannot be used with `toolsets`. |
+| `headers` | `Optional[Dict[str, Any]]` | `None` | HTTP headers for toolbox client requests |
+| `transport` | `str` | `"streamable-http"` | MCP transport protocol. Options: `"stdio"`, `"sse"`, `"streamable-http"` |
+
+<Note>
+Only one of `toolsets` or `tool_name` can be specified. The implementation validates this and raises a `ValueError` if both are provided.
+</Note>
+
+## Toolkit Functions
+
+| Function | Description |
+| -------- | ----------- |
+| `async connect()` | Initialize and connect to both MCP server and toolbox client |
+| `async load_tool(tool_name, auth_token_getters={}, bound_params={})` | Load a single tool by name with optional authentication |
+| `async load_toolset(toolset_name, auth_token_getters={}, bound_params={}, strict=False)` | Load all tools from a specific toolset |
+| `async load_multiple_toolsets(toolset_names, auth_token_getters={}, bound_params={}, strict=False)` | Load tools from multiple toolsets |
+| `async load_toolset_safe(toolset_name)` | Safely load a toolset and return tool names for error handling |
+| `get_client()` | Get the underlying ToolboxClient instance |
+| `async close()` | Close both toolbox client and MCP client connections |
+
+## Demo Examples
+
+The complete demo includes multiple working patterns:
+
+- **[Basic Agent](https://github.com/agno-agi/agno/blob/main/cookbook/14_tools/mcp/mcp_toolbox_demo/agent.py)**: Simple hotel assistant with toolset filtering
+- **[AgentOS Integration](https://github.com/agno-agi/agno/blob/main/cookbook/14_tools/mcp/mcp_toolbox_demo/agent_os.py)**: Integration with AgentOS control plane
+- **[Workflow Integration](https://github.com/agno-agi/agno/blob/main/cookbook/14_tools/mcp/mcp_toolbox_demo/hotel_management_workflows.py)**: Using MCPToolbox in Agno workflows
+- **[Type-Safe Agent](https://github.com/agno-agi/agno/blob/main/cookbook/14_tools/mcp/mcp_toolbox_demo/hotel_management_typesafe.py)**: Implementation with Pydantic models
+
+You can use `include_tools` or `exclude_tools` to modify the list of tools the agent has access to. Learn more about [selecting tools](/basics/tools/selecting-tools).
+
+## Developer Resources
+
+- View [Tools](https://github.com/agno-agi/agno/blob/main/libs/agno/agno/tools/mcp_toolbox.py)
+- View [Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/14_tools/mcp/mcp_toolbox_demo)
+
+For more information about MCP Toolbox for Databases, visit the [official documentation](https://googleapis.github.io/genai-toolbox/getting-started/introduction/).
+
+### FILE: ./mcp/multiple-servers.mdx ###
+
+---
+title: Multiple MCP Servers
+description: Understanding how to connect to multiple MCP servers with Agno
+---
+
+Agno's MCP integration also supports handling connections to multiple servers, specifying server parameters and using your own MCP servers
+
+There are two approaches to this:
+1. Using multiple `MCPTools` instances
+2. Using a single `MultiMCPTools` instance
+
+
+## Using multiple `MCPTools` instances
+
+```python multiple_mcp_servers.py
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.tools.mcp import MCPTools
+
+
+async def run_agent(message: str) -> None:
+    """Run the Airbnb and Google Maps agent with the given message."""
+
+    env = {
+        **os.environ,
+        "GOOGLE_MAPS_API_KEY": os.getenv("GOOGLE_MAPS_API_KEY"),
+    }
+
+    # Initialize and connect to multiple MCP servers
+    airbnb_tools = MCPTools(command="npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt")
+    google_maps_tools = MCPTools(command="npx -y @modelcontextprotocol/server-google-maps", env=env)
+    await airbnb_tools.connect()
+    await google_maps_tools.connect()
+
+    try:
+        agent = Agent(
+            tools=[airbnb_tools, google_maps_tools],
+            markdown=True,
+        )
+
+        await agent.aprint_response(message, stream=True)
+    finally:
+        await airbnb_tools.close()
+        await google_maps_tools.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    # Pull request example
+    asyncio.run(
+        run_agent(
+            "What listings are available in Cape Town for 2 people for 3 nights from 1 to 4 August 2025?"
+        )
+    )
+```
+
+## Using a single `MultiMCPTools` instance
+
+```python multiple_mcp_servers.py
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.tools.mcp import MultiMCPTools
+
+
+async def run_agent(message: str) -> None:
+    """Run the Airbnb and Google Maps agent with the given message."""
+
+    env = {
+        **os.environ,
+        "GOOGLE_MAPS_API_KEY": os.getenv("GOOGLE_MAPS_API_KEY"),
+    }
+
+    # Initialize and connect to multiple MCP servers
+    mcp_tools = MultiMCPTools(
+        commands=[
+            "npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt",
+            "npx -y @modelcontextprotocol/server-google-maps",
+        ],
+        env=env,
+    )
+    await mcp_tools.connect()
+
+    try:
+        agent = Agent(
+            tools=[mcp_tools],
+            markdown=True,
+        )
+
+        await agent.aprint_response(message, stream=True)
+    finally:
+        # Always close the connection when done
+        await mcp_tools.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    # Pull request example
+    asyncio.run(
+        run_agent(
+            "What listings are available in Cape Town for 2 people for 3 nights from 1 to 4 August 2025?"
+        )
+    )
+```
+
+### Allowing partial failures with `MultiMCPTools`
+
+If you are connecting to multiple MCP servers using the `MultiMCPTools` class, an error will be raised by default if connection to any MCP server fails.
+
+If you want to avoid raising in that case, you can set the `allow_partial_failures` parameter to `True`.
+
+This is useful if you are connecting to MCP servers that are not always available, and don't want to exit your program if one of the servers is not available.
+
+```python
+import asyncio
+from os import getenv
+
+from agno.agent import Agent
+from agno.tools.mcp import MultiMCPTools
+
+
+async def run_agent(message: str) -> None:
+    # Initialize the MCP tools
+    mcp_tools = MultiMCPTools(
+        [
+            "npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt",
+            "npx -y @modelcontextprotocol/server-brave-search",
+        ],
+        env={
+            "BRAVE_API_KEY": getenv("BRAVE_API_KEY"),
+        },
+        timeout_seconds=30,
+        # Set the allow_partial_failure to True to allow for partial failure connecting to the MCP servers
+        allow_partial_failure=True,
+    )
+
+    # Connect to the MCP servers
+    await mcp_tools.connect()
+
+    # Use the MCP tools with an Agent
+    agent = Agent(
+        tools=[mcp_tools],
+        markdown=True,
+    )
+    await agent.aprint_response(message)
+
+    # Close the MCP connection
+    await mcp_tools.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    asyncio.run(run_agent("What listings are available in Barcelona tonight?"))
+    asyncio.run(run_agent("What's the fastest way to get to Barcelona from London?"))
+```
+
+## Avoiding tool name collisions
+
+When using multiple MCP servers, you may encounter tool name collisions. This often happens when the same tool is available in multiple of the servers you are using.
+
+To avoid this, you can use the `tool_name_prefix` parameter. This will add the given prefix to all tool names coming from the MCPTools instance.
+
+```python
+import asyncio
+
+from agno.agent.agent import Agent
+from agno.tools.mcp import MCPTools
+
+
+async def run_agent():
+    # Development environment tools
+    dev_tools = MCPTools(
+        transport="streamable-http",
+        url="https://docs.agno.com/mcp",
+        # By providing this tool_name_prefix, all the tool names will be prefixed with "dev_"
+        tool_name_prefix="dev",
+    )
+    await dev_tools.connect()
+
+    agent = Agent(tools=[dev_tools])
+    await agent.aprint_response("Which tools do you have access to? List them all.")
+
+    await dev_tools.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(run_agent())
+```
+### FILE: ./mcp/overview.mdx ###
+
+---
+title: Model Context Protocol (MCP)
+sidebarTitle: Overview
+description: Learn how to use MCP with Agno to enable your agents to interact with external systems through a standardized interface.
+---
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) enables Agents to interact with external systems through a standardized interface.
+You can connect your Agents to any MCP server, using Agno's MCP integration.
+
+Below is a simple example shows how to connect an Agent to the Agno MCP server:
+
+```python
+from agno.agent import Agent
+from agno.models.anthropic import Claude
+from agno.tools.mcp import MCPTools
+
+# Create the Agent
+agno_agent = Agent(
+    name="Agno Agent",
+    model=Claude(id="claude-sonnet-4-0"),
+    # Add the Agno MCP server to the Agent
+    tools=[MCPTools(transport="streamable-http", url="https://docs.agno.com/mcp")],
+)
+```
+
+## The Basic Flow
+
+<Steps>
+    <Step title="Find the MCP server you want to use">
+    You can use any working MCP server. To see some examples, you can check [this GitHub repository](https://github.com/modelcontextprotocol/servers), by the maintainers of the MCP themselves.
+    </Step>
+
+    <Step title="Initialize the MCP integration">
+    Initialize the `MCPTools` class and connect to the MCP server. 
+    The recommended way to define the MCP server is to use the `command` or `url` parameters. 
+    With `command`, you can pass the command used to run the MCP server you want. With `url`, you can pass the URL of the running MCP server you want to use.
+
+    For example, to connect to the Agno documentation MCP server, you can do the following:
+
+    ```python
+    from agno.tools.mcp import MCPTools
+
+    # Initialize and connect to the MCP server
+    mcp_tools = MCPTools(transport="streamable-http", url="https://docs.agno.com/mcp"))
+    await mcp_tools.connect()
+    ```
+
+    </Step>
+
+    <Step title="Provide the MCPTools to the Agent">
+    When initializing the Agent, pass the `MCPTools` instance in the `tools` parameter. Remember to close the connection when you're done.
+
+    The agent will now be ready to use the MCP server:
+
+    ```python
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.tools.mcp import MCPTools
+
+    # Initialize and connect to the MCP server
+    mcp_tools = MCPTools(url="https://docs.agno.com/mcp")
+    await mcp_tools.connect()
+
+    try:
+        # Setup and run the agent
+        agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+        await agent.aprint_response("Tell me more about MCP support in Agno", stream=True)
+    finally:
+        # Always close the connection when done
+        await mcp_tools.close()
+    ```
+    </Step>
+
+</Steps>
+
+
+### Example: Filesystem Agent
+
+Here's a filesystem agent that uses the [Filesystem MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) to explore and analyze files:
+
+```python filesystem_agent.py
+import asyncio
+from pathlib import Path
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+
+
+async def run_agent(message: str) -> None:
+    """Run the filesystem agent with the given message."""
+
+    file_path = "<path to the directory you want to explore>"
+
+    # Initialize and connect to the MCP server to access the filesystem
+    mcp_tools = MCPTools(command=f"npx -y @modelcontextprotocol/server-filesystem {file_path}")
+    await mcp_tools.connect()
+
+    try:
+        agent = Agent(
+            model=OpenAIChat(id="gpt-5-mini"),
+            tools=[mcp_tools],
+            instructions=dedent("""\
+                You are a filesystem assistant. Help users explore files and directories.
+
+                - Navigate the filesystem to answer questions
+                - Use the list_allowed_directories tool to find directories that you can access
+                - Provide clear context about files you examine
+                - Use headings to organize your responses
+                - Be concise and focus on relevant information\
+            """),
+            markdown=True,
+        )
+
+        # Run the agent
+        await agent.aprint_response(message, stream=True)
+    finally:
+        # Always close the connection when done
+        await mcp_tools.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    # Basic example - exploring project license
+    asyncio.run(run_agent("What is the license for this project?"))
+```
+
+## Connecting your MCP server
+
+### Using `connect()` and `close()`
+
+It is recommended to use the `connect()` and `close()` methods to manage the connection lifecycle of the MCP server.
+
+```python
+mcp_tools = MCPTools(command="uvx mcp-server-git")
+await mcp_tools.connect()
+```
+
+After you're done, you should close the connection to the MCP server.
+
+```python
+await mcp_tools.close()
+```
+
+<Check>
+This is the recommended way to manage the connection lifecycle of the MCP server when using `Agent` or `Team` instances.
+</Check>
+
+### Automatic Connection Management
+
+If you pass the `MCPTools` instance to the `Agent` or `Team` instances without first calling `connect()`, the connection will be managed automatically.
+
+For example:
+
+```python
+mcp_tools = MCPTools(command="uvx mcp-server-git")
+agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+await agent.aprint_response("What is the license for this project?", stream=True)  # The connection is established and closed on each run.
+```
+
+<Note>
+Here the connection to the MCP server (in the case of hosted MCP servers) is established and closed on each run.
+Additionally the list of available tools is refreshed on each run.
+
+This has an impact on performance and is not recommended for production use.
+</Note>
+
+### Using Async Context Manager
+
+If you prefer, you can also use `MCPTools` or `MultiMCPTools` as async context managers for automatic resource cleanup:
+
+```python
+async with MCPTools(command="uvx mcp-server-git") as mcp_tools:
+    agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+    await agent.aprint_response("What is the license for this project?", stream=True)
+```
+
+This pattern automatically handles connection and cleanup, but the explicit `.connect()` and `.close()` methods provide more control over connection lifecycle.
+
+### Automatic Connection Management in AgentOS
+
+When using MCPTools within AgentOS, the lifecycle is automatically managed. No need to manually connect or disconnect the `MCPTools` instance. This does not automatically refresh connections, you can use [`refresh_connection`](#connection-refresh) to do so.
+
+See the [AgentOS + MCPTools](/agent-os/mcp/tools) page for more details.
+
+<Check>
+This is the recommended way to manage the connection lifecycle of the MCP server when using `AgentOS`.
+</Check>
+
+## Connection Refresh
+
+You can set `refresh_connection` on the `MCPTools` and `MultiMCPTools` instances to refresh the connection to the MCP server on each run.
+
+```python
+mcp_tools = MCPTools(command="uvx mcp-server-git", refresh_connection=True)
+await mcp_tools.connect()
+
+agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+await agent.aprint_response("What is the license for this project?", stream=True)  # The connection will be refreshed on each run.
+
+await mcp_tools.close()
+```
+
+### How it works
+
+- When you call the `connect()` method, a new session is established with the MCP server. If that server becomes unavailable, that connection is closed and a new one has to be established.
+- If you set `refresh_connection` to `True`, each time the agent is run the connection to the MCP server is checked and re-established if needed, and the list of available tools is then refreshed.
+- This is particularly useful for hosted MCP servers that are prone to restarts or that often change their schema or list of tools.
+- It is recommended to only use this when you manually manage the connection lifecycle of the MCP server, or when using agents/teams with [`MCPTools` in `AgentOS`](/agent-os/mcp/tools).
+
+## Transports
+
+Transports in the Model Context Protocol (MCP) define how messages are sent and received. The Agno integration supports the three existing types:
+- [stdio](https://modelcontextprotocol.io/docs/basics/transports#standard-input%2Foutput-stdio) -> See the [stdio transport documentation](/basics/tools/mcp/transports/stdio)
+- [Streamable HTTP](https://modelcontextprotocol.io/specification/draft/basic/transports#streamable-http) -> See the [streamable HTTP transport documentation](/basics/tools/mcp/transports/streamable_http)
+- [SSE](https://modelcontextprotocol.io/docs/basics/transports#server-sent-events-sse) -> See the [SSE transport documentation](/basics/tools/mcp/transports/sse)
+
+<Note>
+The stdio (standard input/output) transport is the default one in Agno's `MCPTools` and `MultiMCPTools`. 
+</Note>
+
+
+## Best Practices
+
+1. **Resource Cleanup**: Always close MCP connections when done to prevent resource leaks:
+```python
+mcp_tools = MCPTools(command="uvx mcp-server-git")
+await mcp_tools.connect()
+
+try:
+    # Your agent code here
+    pass
+finally:
+    await mcp_tools.close()
+```
+
+2. **Error Handling**: Always include proper error handling for MCP server connections and operations.
+
+3. **Clear Instructions**: Provide clear and specific instructions to your agent:
+
+```python
+instructions = """
+You are a filesystem assistant. Help users explore files and directories.
+- Navigate the filesystem to answer questions
+- Use the list_allowed_directories tool to find accessible directories
+- Provide clear context about files you examine
+- Be concise and focus on relevant information
+"""
+```
+
+## Developer Resources
+
+- See how to use MCP with AgentOS [here](/agent-os/mcp/tools).
+- Find examples of Agents that use MCP [here](/basics/tools/mcp/usage/airbnb).
+- Find a collection of MCP servers [here](https://github.com/modelcontextprotocol/servers).
+
+### FILE: ./mcp/server-params.mdx ###
+
+---
+title: Understanding Server Parameters
+description: Understanding how to configure the server parameters for the MCPTools and MultiMCPTools classes
+---
+
+
+The recommended way to configure `MCPTools` is to use the `command` or `url` parameters.
+
+Alternatively, you can use the `server_params` parameter with `MCPTools` to configure the connection to the MCP server in more detail.
+
+When using the **stdio** transport, the `server_params` parameter should be an instance of `StdioServerParameters`. It contains the following keys:
+- `command`: The command to run the MCP server.
+    - Use `npx` for mcp servers that can be installed via npm (or `node` if running on Windows).
+    - Use `uvx` for mcp servers that can be installed via uvx.
+    - Use custom binary executables (e.g., `./my-server`, `../usr/local/bin/my-server`, or binaries in your PATH).
+- `args`: The arguments to pass to the MCP server.
+- `env`: Optional environment variables to pass to the MCP server. Remember to include all current environment variables in the `env` dictionary. If `env` is not provided, the current environment variables will be used.
+e.g.
+```python
+{
+    **os.environ,
+    "GOOGLE_MAPS_API_KEY": os.getenv("GOOGLE_MAPS_API_KEY"),
+}
+```
+
+When using the **SSE** transport, the `server_params` parameter should be an instance of `SSEClientParams`. It contains the following fields:
+- `url`: The URL of the MCP server.
+- `headers`: Headers to pass to the MCP server (optional).
+- `timeout`: Timeout for the connection to the MCP server (optional).
+- `sse_read_timeout`: Timeout for the SSE connection itself (optional).
+
+When using the **Streamable HTTP** transport, the `server_params` parameter should be an instance of `StreamableHTTPClientParams`. It contains the following fields:
+- `url`: The URL of the MCP server.
+- `headers`: Headers to pass to the MCP server (optional).
+- `timeout`: Timeout for the connection to the MCP server (optional).
+- `sse_read_timeout`: how long (in seconds) the client will wait for a new event before disconnecting. All other HTTP operations are controlled by `timeout` (optional).
+- `terminate_on_close`: Whether to terminate the connection when the client is closed (optional).
+
+
+
+### FILE: ./mcp/transports/sse.mdx ###
+
+---
+title: SSE Transport
+sidebarTitle: SSE
+---
+
+Agno's MCP integration supports the [SSE transport](https://modelcontextprotocol.io/docs/basics/transports#server-sent-events-sse). This transport enables server-to-client streaming, and can prove more useful than [stdio](https://modelcontextprotocol.io/docs/basics/transports#standard-input%2Foutput-stdio) when working with restricted networks.
+
+<Note>
+This transport is not recommended anymore by the MCP protocol. Use the [Streamable HTTP transport](/basics/tools/mcp/transports/streamable_http) instead.
+</Note>
+
+To use it, initialize the `MCPTools` passing the URL of the MCP server and setting the transport to `sse`:
+
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+
+server_url = "http://localhost:8000/sse"
+
+# Initialize and connect to the SSE MCP server
+mcp_tools = MCPTools(url=server_url, transport="sse")
+await mcp_tools.connect()
+
+try:
+    agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+    await agent.aprint_response("What is the license for this project?", stream=True)
+finally:
+    # Always close the connection when done
+    await mcp_tools.close()
+```
+
+
+You can also use the `server_params` argument to define the MCP connection. This way you can specify the headers to send to the MCP server with every request, and the timeout values:
+
+```python
+from agno.tools.mcp import MCPTools, SSEClientParams
+
+server_params = SSEClientParams(
+    url=...,
+    headers=...,
+    timeout=...,
+    sse_read_timeout=...,
+)
+
+# Initialize and connect using server parameters
+mcp_tools = MCPTools(server_params=server_params, transport="sse")
+await mcp_tools.connect()
+
+try:
+    # Use mcp_tools with your agent
+    pass
+finally:
+    await mcp_tools.close()
+```
+
+
+## Complete example
+
+Let's set up a simple local server and connect to it using the SSE transport:
+
+<Steps>
+    <Step title="Setup the server">
+        ```python sse_server.py
+        from mcp.server.fastmcp import FastMCP
+
+        mcp = FastMCP("calendar_assistant")
+
+
+        @mcp.tool()
+        def get_events(day: str) -> str:
+            return f"There are no events scheduled for {day}."
+
+
+        @mcp.tool()
+        def get_birthdays_this_week() -> str:
+            return "It is your mom's birthday tomorrow"
+
+
+        if __name__ == "__main__":
+            mcp.run(transport="sse")
+        ```
+    </Step>
+
+    <Step title="Setup the client">
+        ```python sse_client.py
+        import asyncio
+
+        from agno.agent import Agent
+        from agno.models.openai import OpenAIChat
+        from agno.tools.mcp import MCPTools, MultiMCPTools
+
+        # This is the URL of the MCP server we want to use.
+        server_url = "http://localhost:8000/sse"
+
+
+        async def run_agent(message: str) -> None:
+            # Initialize and connect to the SSE MCP server
+            mcp_tools = MCPTools(transport="sse", url=server_url)
+            await mcp_tools.connect()
+
+            try:
+                agent = Agent(
+                    model=OpenAIChat(id="gpt-5-mini"),
+                    tools=[mcp_tools],
+                    markdown=True,
+                )
+                await agent.aprint_response(message=message, stream=True, markdown=True)
+            finally:
+                await mcp_tools.close()
+
+
+        # Using MultiMCPTools, we can connect to multiple MCP servers at once, even if they use different transports.
+        # In this example we connect to both our example server (SSE transport), and a different server (stdio transport).
+        async def run_agent_with_multimcp(message: str) -> None:
+            # Initialize and connect to multiple MCP servers with different transports
+            mcp_tools = MultiMCPTools(
+                commands=["npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt"],
+                urls=[server_url],
+                urls_transports=["sse"],
+            )
+            await mcp_tools.connect()
+
+            try:
+                agent = Agent(
+                    model=OpenAIChat(id="gpt-5-mini"),
+                    tools=[mcp_tools],
+                    markdown=True,
+                )
+                await agent.aprint_response(message=message, stream=True, markdown=True)
+            finally:
+                await mcp_tools.close()
+
+
+        if __name__ == "__main__":
+            asyncio.run(run_agent("Do I have any birthdays this week?"))
+            asyncio.run(
+                run_agent_with_multimcp(
+                    "Can you check when is my mom's birthday, and if there are any AirBnb listings in SF for two people for that day?"
+                )
+            )
+        ```
+    </Step>
+
+    <Step title="Run the server">
+        ```bash
+        python sse_server.py
+        ```
+    </Step>
+
+    <Step title="Run the client">
+        ```bash
+        python sse_client.py
+        ```
+    </Step>
+</Steps>
+### FILE: ./mcp/transports/stdio.mdx ###
+
+---
+title: Stdio Transport
+sidebarTitle: Stdio
+---
+
+The stdio (standard input/output) transport is the default one in Agno's integration. It works best for local integrations.
+
+To use it, simply initialize the `MCPTools` class with the `command` argument.
+The command you want to pass is the one used to run the MCP server the agent will have access to.
+
+For example `uvx mcp-server-git`, which runs a [git MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/git):
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+
+# Initialize and connect to the MCP server
+# Can also use custom binaries: command="./my-mcp-server"
+mcp_tools = MCPTools(command="uvx mcp-server-git")
+await mcp_tools.connect()
+
+try:
+    agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+    await agent.aprint_response("What is the license for this project?", stream=True)
+finally:
+    # Always close the connection when done
+    await mcp_tools.close()
+```
+
+
+You can also use multiple MCP servers at once, with the `MultiMCPTools` class. For example:
+
+
+```python
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.tools.mcp import MultiMCPTools
+
+
+async def run_agent(message: str) -> None:
+    """Run the Airbnb and Google Maps agent with the given message."""
+
+    env = {
+        **os.environ,
+        "GOOGLE_MAPS_API_KEY": os.getenv("GOOGLE_MAPS_API_KEY"),
+    }
+
+    # Initialize and connect to multiple MCP servers
+    mcp_tools = MultiMCPTools(
+        commands=[
+            "npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt",
+            "npx -y @modelcontextprotocol/server-google-maps",
+        ],
+        env=env,
+    )
+    await mcp_tools.connect()
+
+    try:
+        agent = Agent(
+            tools=[mcp_tools],
+            markdown=True,
+        )
+
+        await agent.aprint_response(message, stream=True)
+    finally:
+        # Always close the connection when done
+        await mcp_tools.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    # Pull request example
+    asyncio.run(
+        run_agent(
+            "What listings are available in Cape Town for 2 people for 3 nights from 1 to 4 August 2025?"
+        )
+    )
+```
+
+### FILE: ./mcp/transports/streamable_http.mdx ###
+
+---
+title: Streamable HTTP Transport
+sidebarTitle: Streamable HTTP
+---
+
+The new [Streamable HTTP transport](https://modelcontextprotocol.io/specification/draft/basic/transports#streamable-http) replaces the HTTP+SSE transport from protocol version `2024-11-05`.
+
+This transport enables the MCP server to handle multiple client connections, and can also use SSE for server-to-client streaming.
+
+To use it, initialize the `MCPTools` passing the URL of the MCP server and setting the transport to `streamable-http`:
+
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+
+# Initialize and connect to the Streamable HTTP MCP server
+mcp_tools = MCPTools(url="https://docs.agno.com/mcp", transport="streamable-http")
+await mcp_tools.connect()
+
+try:
+    agent = Agent(model=OpenAIChat(id="gpt-5-mini"), tools=[mcp_tools])
+    await agent.aprint_response("What can you tell me about MCP support in Agno?", stream=True)
+finally:
+    # Always close the connection when done
+    await mcp_tools.close()
+```
+
+
+You can also use the `server_params` argument to define the MCP connection. This way you can specify the headers to send to the MCP server with every request, and the timeout values:
+
+```python
+from agno.tools.mcp import MCPTools, StreamableHTTPClientParams
+
+server_params = StreamableHTTPClientParams(
+    url=...,
+    headers=...,
+    timeout=...,
+    sse_read_timeout=...,
+    terminate_on_close=...,
+)
+
+# Initialize and connect using server parameters
+mcp_tools = MCPTools(server_params=server_params, transport="streamable-http")
+await mcp_tools.connect()
+
+try:
+    # Use mcp_tools with your agent
+    pass
+finally:
+    await mcp_tools.close()
+```
+
+
+## Complete example
+
+Let's set up a simple local server and connect to it using the Streamable HTTP transport:
+
+
+<Steps>
+    <Step title="Setup the server">
+        ```python streamable_http_server.py
+        from mcp.server.fastmcp import FastMCP
+
+        mcp = FastMCP("calendar_assistant")
+
+
+        @mcp.tool()
+        def get_events(day: str) -> str:
+            return f"There are no events scheduled for {day}."
+
+
+        @mcp.tool()
+        def get_birthdays_this_week() -> str:
+            return "It is your mom's birthday tomorrow"
+
+
+        if __name__ == "__main__":
+            mcp.run(transport="streamable-http")
+        ```
+    </Step>
+
+    <Step title="Setup the client">
+        ```python streamable_http_client.py
+        import asyncio
+
+        from agno.agent import Agent
+        from agno.models.openai import OpenAIChat
+        from agno.tools.mcp import MCPTools, MultiMCPTools
+
+        # This is the URL of the MCP server we want to use.
+        server_url = "http://localhost:8000/mcp"
+
+
+        async def run_agent(message: str) -> None:
+            # Initialize and connect to the Streamable HTTP MCP server
+            mcp_tools = MCPTools(transport="streamable-http", url=server_url)
+            await mcp_tools.connect()
+
+            try:
+                agent = Agent(
+                    model=OpenAIChat(id="gpt-5-mini"),
+                    tools=[mcp_tools],
+                    markdown=True,
+                )
+                await agent.aprint_response(message=message, stream=True, markdown=True)
+            finally:
+                await mcp_tools.close()
+
+
+        # Using MultiMCPTools, we can connect to multiple MCP servers at once, even if they use different transports.
+        # In this example we connect to both our example server (Streamable HTTP transport), and a different server (stdio transport).
+        async def run_agent_with_multimcp(message: str) -> None:
+            # Initialize and connect to multiple MCP servers with different transports
+            mcp_tools = MultiMCPTools(
+                commands=["npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt"],
+                urls=[server_url],
+                urls_transports=["streamable-http"],
+            )
+            await mcp_tools.connect()
+
+            try:
+                agent = Agent(
+                    model=OpenAIChat(id="gpt-5-mini"),
+                    tools=[mcp_tools],
+                    markdown=True,
+                )
+                await agent.aprint_response(message=message, stream=True, markdown=True)
+            finally:
+                await mcp_tools.close()
+
+
+        if __name__ == "__main__":
+            asyncio.run(run_agent("Do I have any birthdays this week?"))
+            asyncio.run(
+                run_agent_with_multimcp(
+                    "Can you check when is my mom's birthday, and if there are any AirBnb listings in SF for two people for that day?"
+                )
+            )
+        ```
+    </Step>
+
+    <Step title="Run the server">
+        ```bash
+        python streamable_http_server.py
+        ```
+    </Step>
+
+    <Step title="Run the client">
+        ```bash
+        python streamable_http_client.py
+        ```
+    </Step>
+</Steps>
+### FILE: ./mcp/usage/airbnb.mdx ###
+
+---
+title: Airbnb MCP agent
+---
+
+Using the [Airbnb MCP server](https://github.com/openbnb-org/mcp-server-airbnb) to create an Agent that can search for Airbnb listings:
+
+```python
+"""🏠 MCP Airbnb Agent - Search for Airbnb listings!
+
+This example shows how to create an agent that uses MCP and Gemini 2.5 Pro to search for Airbnb listings.
+
+Run: `pip install google-genai mcp agno` to install the dependencies
+"""
+
+import asyncio
+
+from agno.agent import Agent
+from agno.models.google import Gemini
+from agno.tools.mcp import MCPTools
+from agno.utils.pprint import apprint_run_response
+
+
+async def run_agent(message: str) -> None:
+    async with MCPTools(
+        "npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt"
+    ) as mcp_tools:
+        agent = Agent(
+            model=Gemini(id="gemini-2.5-pro-exp-03-25"),
+            tools=[mcp_tools],
+            markdown=True,
+        )
+
+        response_stream = await agent.arun(message, stream=True)
+        await apprint_run_response(response_stream, markdown=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(
+        run_agent(
+            "What listings are available in San Francisco for 2 people for 3 nights from 1 to 4 August 2025?"
+        )
+    )
+
+```
+
+
+
+
+### FILE: ./mcp/usage/github.mdx ###
+
+---
+title: GitHub MCP agent
+---
+
+Using the [GitHub MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/github) to create an Agent that can explore, analyze and provide insights about GitHub repositories:
+
+
+```python
+"""🐙 MCP GitHub Agent - Your Personal GitHub Explorer!
+
+This example shows how to create a GitHub agent that uses MCP to explore,
+analyze, and provide insights about GitHub repositories. The agent leverages the Model
+Context Protocol (MCP) to interact with GitHub, allowing it to answer questions
+about issues, pull requests, repository details and more.
+
+Example prompts to try:
+- "List open issues in the repository"
+- "Show me recent pull requests"
+- "What are the repository statistics?"
+- "Find issues labeled as bugs"
+- "Show me contributor activity"
+
+Run: `pip install agno mcp openai` to install the dependencies
+Environment variables needed:
+- Create a GitHub personal access token following these steps:
+    - https://github.com/modelcontextprotocol/servers/tree/main/src/github#setup
+- export GITHUB_TOKEN: Your GitHub personal access token
+"""
+
+import asyncio
+import os
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.tools.mcp import MCPTools
+from mcp import StdioServerParameters
+
+
+async def run_agent(message: str) -> None:
+    """Run the GitHub agent with the given message."""
+
+    # Initialize the MCP server
+    server_params = StdioServerParameters(
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-github"],
+    )
+
+    # Create a client session to connect to the MCP server
+    async with MCPTools(server_params=server_params) as mcp_tools:
+        agent = Agent(
+            tools=[mcp_tools],
+            instructions=dedent("""\
+                You are a GitHub assistant. Help users explore repositories and their activity.
+
+                - Use headings to organize your responses
+                - Be concise and focus on relevant information\
+            """),
+            markdown=True,
+                    )
+
+        # Run the agent
+        await agent.aprint_response(message, stream=True)
+
+
+# Example usage
+if __name__ == "__main__":
+    # Pull request example
+    asyncio.run(
+        run_agent(
+            "Tell me about Agno. Github repo: https://github.com/agno-agi/agno. You can read the README for more information."
+        )
+    )
+
+
+# More example prompts to explore:
+"""
+Issue queries:
+1. "Find issues needing attention"
+2. "Show me issues by label"
+3. "What issues are being actively discussed?"
+4. "Find related issues"
+5. "Analyze issue resolution patterns"
+
+Pull request queries:
+1. "What PRs need review?"
+2. "Show me recent merged PRs"
+3. "Find PRs with conflicts"
+4. "What features are being developed?"
+5. "Analyze PR review patterns"
+
+Repository queries:
+1. "Show repository health metrics"
+2. "What are the contribution guidelines?"
+3. "Find documentation gaps"
+4. "Analyze code quality trends"
+5. "Show repository activity patterns"
+"""
+```
+
+### FILE: ./mcp/usage/notion.mdx ###
+
+---
+title: Notion MCP agent
+---
+
+
+Using the [Notion MCP server](https://github.com/makenotion/notion-mcp-server) to create an Agent that can create, update and search for Notion pages:
+
+```python
+"""
+Notion MCP Agent - Manages your documents
+
+This example shows how to use the Agno MCP tools to interact with your Notion workspace.
+
+1. Start by setting up a new internal integration in Notion: https://www.notion.so/profile/integrations
+2. Export your new Notion key: `export NOTION_API_KEY=ntn_****`
+3. Connect your relevant Notion pages to the integration. To do this, you'll need to visit that page, and click on the 3 dots, and select "Connect to integration".
+
+Dependencies: pip install agno mcp openai
+
+Usage:
+  python cookbook/14_tools/mcp/notion_mcp_agent.py
+"""
+
+import asyncio
+import json
+import os
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from mcp import StdioServerParameters
+
+
+async def run_agent():
+    token = os.getenv("NOTION_API_KEY")
+    if not token:
+        raise ValueError(
+            "Missing Notion API key: provide --NOTION_API_KEY or set NOTION_API_KEY environment variable"
+        )
+
+    command = "npx"
+    args = ["-y", "@notionhq/notion-mcp-server"]
+    env = {
+        "OPENAPI_MCP_HEADERS": json.dumps(
+            {"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28"}
+        )
+    }
+    server_params = StdioServerParameters(command=command, args=args, env=env)
+
+    async with MCPTools(server_params=server_params) as mcp_tools:
+        agent = Agent(
+            name="NotionDocsAgent",
+            model=OpenAIChat(id="gpt-5-mini"),
+            tools=[mcp_tools],
+            description="Agent to query and modify Notion docs via MCP",
+            instructions=dedent("""\
+                You have access to Notion documents through MCP tools.
+                - Use tools to read, search, or update pages.
+                - Confirm with the user before making modifications.
+            """),
+            markdown=True,
+                    )
+
+        await agent.acli_app(
+            input="You are a helpful assistant that can access Notion workspaces and pages.",
+            stream=True,
+            markdown=True,
+            exit_on=["exit", "quit"],
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(run_agent())
+```
+
+
+### FILE: ./mcp/usage/parallel.mdx ###
+
+---
+title: Parallel MCP agent
+---
+
+Using the [Parallel MCP server](https://docs.parallel.ai/integrations/mcp/search-mcp) to create an Agent that can search the web using Parallel's AI-optimized search capabilities:
+
+```python
+"""MCP Parallel Agent - Search for Parallel
+
+This example shows how to create an agent that uses Parallel to search for information using the Parallel MCP server.
+
+Run: `pip install anthropic mcp agno` to install the dependencies
+
+Prerequisites:
+- Set the environment variable "PARALLEL_API_KEY" with your Parallel API key.
+- Set the environment variable "ANTHROPIC_API_KEY" with your Anthropic API key.
+- You can get the Parallel API key from: https://platform.parallel.ai/
+- You can get the Anthropic API key from: https://console.anthropic.com/
+
+Usage:
+  python cookbook/14_tools/mcp/parallel.py
+"""
+
+import asyncio
+from os import getenv
+
+from agno.agent import Agent
+from agno.models.anthropic import Claude
+from agno.tools.mcp import MCPTools
+from agno.tools.mcp.params import StreamableHTTPClientParams
+from agno.utils.pprint import apprint_run_response
+
+server_params = StreamableHTTPClientParams(
+    url="https://search-mcp.parallel.ai/mcp",
+    headers={
+        "authorization": f"Bearer {getenv('PARALLEL_API_KEY')}",
+    },
+)
+
+
+async def run_agent(message: str) -> None:
+    async with MCPTools(
+        transport="streamable-http", server_params=server_params
+    ) as parallel_mcp_server:
+        agent = Agent(
+            model=Claude(id="claude-sonnet-4-20250514"),
+            tools=[parallel_mcp_server],
+            markdown=True,
+        )
+        response_stream = await agent.arun(message)
+        await apprint_run_response(response_stream)
+
+
+if __name__ == "__main__":
+    asyncio.run(run_agent("What is the weather in Tokyo?"))
+```
+
+### FILE: ./mcp/usage/pipedream-auth.mdx ###
+
+---
+title: "Pipedream Auth"
+description: "This example shows how to add authorization when integrating Pipedream MCP servers with Agno Agents."
+---
+
+## Code
+
+```python
+"""
+🔒 Using Pipedream MCP servers with authentication
+
+This is an example of how to use Pipedream MCP servers with authentication.
+This is useful if your app is interfacing with the MCP servers in behalf of your users.
+
+1. Get your access token. You can check how in Pipedream's docs: https://pipedream.com/docs/connect/mcp/developers/
+2. Get the URL of the MCP server. It will look like this: https://remote.mcp.pipedream.net/<External user id>/<MCP app slug>
+3. Set the environment variables:
+    - MCP_SERVER_URL: The URL of the MCP server you previously got
+    - MCP_ACCESS_TOKEN: The access token you previously got
+    - PIPEDREAM_PROJECT_ID: The project id of the Pipedream project you want to use
+    - PIPEDREAM_ENVIRONMENT: The environment of the Pipedream project you want to use
+3. Install dependencies: pip install agno mcp-sdk
+"""
+
+import asyncio
+from os import getenv
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools, StreamableHTTPClientParams
+from agno.utils.log import log_exception
+
+mcp_server_url = getenv("MCP_SERVER_URL")
+mcp_access_token = getenv("MCP_ACCESS_TOKEN")
+pipedream_project_id = getenv("PIPEDREAM_PROJECT_ID")
+pipedream_environment = getenv("PIPEDREAM_ENVIRONMENT")
+
+
+server_params = StreamableHTTPClientParams(
+    url=mcp_server_url,
+    headers={
+        "Authorization": f"Bearer {mcp_access_token}",
+        "x-pd-project-id": pipedream_project_id,
+        "x-pd-environment": pipedream_environment,
+    },
+)
+
+
+async def run_agent(task: str) -> None:
+    try:
+        async with MCPTools(
+            server_params=server_params, transport="streamable-http", timeout_seconds=20
+        ) as mcp:
+            agent = Agent(
+                model=OpenAIChat(id="gpt-5-mini"),
+                tools=[mcp],
+                markdown=True,
+            )
+            await agent.aprint_response(message=task, stream=True)
+    except Exception as e:
+        log_exception(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    # The agent can read channels, users, messages, etc.
+    asyncio.run(run_agent("Show me the latest message in the channel #general"))
+```
+### FILE: ./mcp/usage/pipedream-google-calendar.mdx ###
+
+---
+title: "Pipedream Google Calendar"
+description: "This example shows how to use the Google Calendar Pipedream MCP server with Agno Agents."
+---
+
+## Code
+
+```python
+"""
+🗓️ Pipedream Google Calendar MCP
+
+This example shows how to use Pipedream MCP servers (in this case the Google Calendar one) with Agno Agents.
+
+1. Connect your Pipedream and Google Calendar accounts: https://mcp.pipedream.com/app/google-calendar
+2. Get your Pipedream MCP server url: https://mcp.pipedream.com/app/google-calendar
+3. Set the MCP_SERVER_URL environment variable to the MCP server url you got above
+4. Install dependencies: pip install agno mcp-sdk
+"""
+
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from agno.utils.log import log_exception
+
+mcp_server_url = os.getenv("MCP_SERVER_URL")
+
+
+async def run_agent(task: str) -> None:
+    try:
+        async with MCPTools(
+            url=mcp_server_url, transport="sse", timeout_seconds=20
+        ) as mcp:
+            agent = Agent(
+                model=OpenAIChat(id="gpt-5-mini"),
+                tools=[mcp],
+                markdown=True,
+            )
+            await agent.aprint_response(
+                message=task,
+                stream=True,
+            )
+    except Exception as e:
+        log_exception(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    asyncio.run(
+        run_agent("Tell me about all events I have in my calendar for tomorrow")
+    )
+```
+
+### FILE: ./mcp/usage/pipedream-linkedin.mdx ###
+
+---
+title: "Pipedream LinkedIn"
+description: "This example shows how to use the LinkedIn Pipedream MCP server with Agno Agents."
+---
+
+## Code
+
+```python
+"""
+💻 Pipedream LinkedIn MCP
+
+This example shows how to use Pipedream MCP servers (in this case the LinkedIn one) with Agno Agents.
+
+1. Connect your Pipedream and LinkedIn accounts: https://mcp.pipedream.com/app/linkedin
+2. Get your Pipedream MCP server url: https://mcp.pipedream.com/app/linkedin
+3. Set the MCP_SERVER_URL environment variable to the MCP server url you got above
+4. Install dependencies: pip install agno mcp-sdk
+"""
+
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from agno.utils.log import log_exception
+
+mcp_server_url = os.getenv("MCP_SERVER_URL")
+
+
+async def run_agent(task: str) -> None:
+    try:
+        async with MCPTools(
+            url=mcp_server_url, transport="sse", timeout_seconds=20
+        ) as mcp:
+            agent = Agent(
+                model=OpenAIChat(id="gpt-5-mini"),
+                tools=[mcp],
+                markdown=True,
+            )
+            await agent.aprint_response(
+                message=task,
+                stream=True,
+            )
+    except Exception as e:
+        log_exception(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    asyncio.run(
+        run_agent("Check the Pipedream organization on LinkedIn and tell me about it")
+    )
+```
+
+### FILE: ./mcp/usage/pipedream-slack.mdx ###
+
+---
+title: "Pipedream Slack"
+description: "This example shows how to use the Slack Pipedream MCP server with Agno Agents."
+---
+
+## Code
+
+```python
+"""
+💬 Pipedream Slack MCP
+
+This example shows how to use Pipedream MCP servers (in this case the Slack one) with Agno Agents.
+
+1. Connect your Pipedream and Slack accounts: https://mcp.pipedream.com/app/slack
+2. Get your Pipedream MCP server url: https://mcp.pipedream.com/app/slack
+3. Set the MCP_SERVER_URL environment variable to the MCP server url you got above
+4. Install dependencies: pip install agno mcp-sdk
+
+"""
+
+import asyncio
+import os
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from agno.utils.log import log_exception
+
+mcp_server_url = os.getenv("MCP_SERVER_URL")
+
+
+async def run_agent(task: str) -> None:
+    try:
+        async with MCPTools(
+            url=mcp_server_url, transport="sse", timeout_seconds=20
+        ) as mcp:
+            agent = Agent(
+                model=OpenAIChat(id="gpt-5-mini"),
+                tools=[mcp],
+                markdown=True,
+            )
+            await agent.aprint_response(
+                message=task,
+                stream=True,
+            )
+    except Exception as e:
+        log_exception(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    # The agent can read channels, users, messages, etc.
+    asyncio.run(run_agent("Show me the latest message in the channel #general"))
+
+    # Use your real Slack name for this one to work!
+    asyncio.run(
+        run_agent("Send a message to <YOUR_NAME> saying 'Hello, I'm your Agno Agent!'")
+    )
+```
+
+### FILE: ./mcp/usage/stagehand.mdx ###
+
+---
+title: Stagehand MCP agent
+description: A web scraping agent that uses the Stagehand MCP server to automate browser interactions and create a structured content digest from Hacker News.
+---
+
+## Key Features
+
+- **Safe Navigation**: Proper initialization sequence prevents common browser automation errors
+- **Structured Data Extraction**: Methodical approach to extracting and organizing web content
+- **Flexible Output**: Creates well-structured digests with headlines, summaries, and insights
+
+## Prerequisites
+
+Before running this example, you'll need:
+
+- **Browserbase Account**: Get API credentials from [Browserbase](https://browserbase.com)
+- **OpenAI API Key**: Get an API Key from [OpenAI](https://platform.openai.com/settings/organization/api-keys)
+
+## Setup Instructions
+
+### 1. Clone and Build Stagehand MCP Server
+```bash
+git clone https://github.com/browserbase/mcp-server-browserbase
+
+# Navigate to the stagehand directory
+cd mcp-server-browserbase/stagehand
+
+# Install dependencies and build
+npm install
+npm run build
+```
+
+### 2. Install Python Dependencies
+
+```bash
+pip install agno mcp openai
+```
+
+### 3. Set Environment Variables
+
+```bash
+export BROWSERBASE_API_KEY=your_browserbase_api_key
+export BROWSERBASE_PROJECT_ID=your_browserbase_project_id
+export OPENAI_API_KEY=your_openai_api_key
+```
+
+## Code Example
+
+```python
+import asyncio
+from os import environ
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from mcp import StdioServerParameters
+
+
+async def run_agent(message: str) -> None:
+    server_params = StdioServerParameters(
+        command="node",
+        # Update this path to the location where you cloned the repository
+        args=["mcp-server-browserbase/stagehand/dist/index.js"],
+        env=environ.copy(),
+    )
+
+    async with MCPTools(server_params=server_params, timeout_seconds=60) as mcp_tools:
+        agent = Agent(
+            model=OpenAIChat(id="gpt-5-mini"),
+            tools=[mcp_tools],
+            instructions=dedent("""\
+                You are a web scraping assistant that creates concise reader's digests from Hacker News.
+
+                CRITICAL INITIALIZATION RULES - FOLLOW EXACTLY:
+                1. NEVER use screenshot tool until AFTER successful navigation
+                2. ALWAYS start with stagehand_navigate first
+                3. Wait for navigation success message before any other actions
+                4. If you see initialization errors, restart with navigation only
+                5. Use stagehand_observe and stagehand_extract to explore pages safely
+
+                Available tools and safe usage order:
+                - stagehand_navigate: Use FIRST to initialize browser
+                - stagehand_extract: Use to extract structured data from pages
+                - stagehand_observe: Use to find elements and understand page structure
+                - stagehand_act: Use to click links and navigate to comments
+                - screenshot: Use ONLY after navigation succeeds and page loads
+
+                Your goal is to create a comprehensive but concise digest that includes:
+                - Top headlines with brief summaries
+                - Key themes and trends
+                - Notable comments and insights
+                - Overall tech news landscape overview
+
+                Be methodical, extract structured data, and provide valuable insights.
+            """),
+            markdown=True,
+                    )
+        await agent.aprint_response(message, stream=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(
+        run_agent(
+            "Create a comprehensive Hacker News Reader's Digest from https://news.ycombinator.com"
+        )
+    )
+```
+## Available Tools
+
+The Stagehand MCP server provides several tools for web automation:
+
+| Tool | Purpose | Usage Notes |
+|------|---------|-------------|
+| `stagehand_navigate` | Navigate to web pages | **Use first** for initialization |
+| `stagehand_extract` | Extract structured data | Safe for content extraction |
+| `stagehand_observe` | Find elements and understand page structure | Good for exploration |
+| `stagehand_act` | Interact with page elements | Click, type, scroll actions |
+| `screenshot` | Take screenshots | **Use only after** navigation succeeds |
+### FILE: ./mcp/usage/stripe.mdx ###
+
+---
+title: Stripe MCP agent
+sidebarTitle: Stripe
+---
+
+
+Using the [Stripe MCP server](https://github.com/stripe/agent-toolkit/tree/main/modelcontextprotocol) to create an Agent that can interact with the Stripe API:
+
+```python
+"""💵 Stripe MCP Agent - Manage Your Stripe Operations
+
+This example demonstrates how to create an Agno agent that interacts with the Stripe API via the Model Context Protocol (MCP). This agent can create and manage Stripe objects like customers, products, prices, and payment links using natural language commands.
+
+
+Setup:
+2. Install Python dependencies: `pip install agno mcp-sdk`
+3. Set Environment Variable: export STRIPE_SECRET_KEY=***.
+
+Stripe MCP Docs: https://github.com/stripe/agent-toolkit
+"""
+
+import asyncio
+import os
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.tools.mcp import MCPTools
+from agno.utils.log import log_error, log_exception, log_info
+
+
+async def run_agent(message: str) -> None:
+    """
+    Sets up the Stripe MCP server and initialize the Agno agent
+    """
+    # Verify Stripe API Key is available
+    stripe_api_key = os.getenv("STRIPE_SECRET_KEY")
+    if not stripe_api_key:
+        log_error("STRIPE_SECRET_KEY environment variable not set.")
+        return
+
+    enabled_tools = "paymentLinks.create,products.create,prices.create,customers.create,customers.read"
+
+    # handle different Operating Systems
+    npx_command = "npx.cmd" if os.name == "nt" else "npx"
+
+    try:
+        # Initialize MCP toolkit with Stripe server
+        async with MCPTools(
+            command=f"{npx_command} -y @stripe/mcp --tools={enabled_tools} --api-key={stripe_api_key}"
+        ) as mcp_toolkit:
+            agent = Agent(
+                name="StripeAgent",
+                instructions=dedent("""\
+                    You are an AI assistant specialized in managing Stripe operations.
+                    You interact with the Stripe API using the available tools.
+
+                    - Understand user requests to create or list Stripe objects (customers, products, prices, payment links).
+                    - Clearly state the results of your actions, including IDs of created objects or lists retrieved.
+                    - Ask for clarification if a request is ambiguous.
+                    - Use markdown formatting, especially for links or code snippets.
+                    - Execute the necessary steps sequentially if a request involves multiple actions (e.g., create product, then price, then link).
+                """),
+                tools=[mcp_toolkit],
+                markdown=True,
+                            )
+
+            # Run the agent with the provided task
+            log_info(f"Running agent with assignment: '{message}'")
+            await agent.aprint_response(message, stream=True)
+
+    except FileNotFoundError:
+        error_msg = f"Error: '{npx_command}' command not found. Please ensure Node.js and npm/npx are installed and in your system's PATH."
+        log_error(error_msg)
+    except Exception as e:
+        log_exception(f"An unexpected error occurred during agent execution: {e}")
+
+
+if __name__ == "__main__":
+    task = "Create a new Stripe product named 'iPhone'. Then create a price of $999.99 USD for it. Finally, create a payment link for that price."
+    asyncio.run(run_agent(task))
+
+
+# Example prompts:
+"""
+Customer Management:
+- "Create a customer. Name: ACME Corp, Email: billing@acme.example.com"
+- "List my customers."
+- "Find customer by email 'jane.doe@example.com'" # Note: Requires 'customers.retrieve' or search capability
+
+Product and Price Management:
+- "Create a new product called 'Basic Plan'."
+- "Create a recurring monthly price of $10 USD for product 'Basic Plan'."
+- "Create a product 'Ebook Download' and a one-time price of $19.95 USD."
+- "List all products." # Note: Requires 'products.list' capability
+- "List all prices." # Note: Requires 'prices.list' capability
+
+Payment Links:
+- "Create a payment link for the $10 USD monthly 'Basic Plan' price."
+- "Generate a payment link for the '$19.95 Ebook Download'."
+
+Combined Tasks:
+- "Create a product 'Pro Service', add a price $150 USD (one-time), and give me the payment link."
+- "Register a new customer 'support@example.com' named 'Support Team'."
+"""
+
+
+```
+
+
+### FILE: ./mcp/usage/supabase.mdx ###
+
+---
+title: Supabase MCP agent
+---
+
+
+Using the [Supabase MCP server](https://github.com/supabase-community/supabase-mcp) to create an Agent that can create projects, database schemas, edge functions, and more:
+
+```python
+"""🔑 Supabase MCP Agent - Showcase Supabase MCP Capabilities
+
+This example demonstrates how to use the Supabase MCP server to create projects, database schemas, edge functions, and more.
+
+Setup:
+1. Install Python dependencies: `pip install agno mcp-sdk`
+2. Create a Supabase Access Token: https://supabase.com/dashboard/account/tokens and set it as the SUPABASE_ACCESS_TOKEN environment variable.
+"""
+
+import asyncio
+import os
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.mcp import MCPTools
+from agno.tools.reasoning import ReasoningTools
+from agno.utils.log import log_error, log_exception, log_info
+
+
+async def run_agent(task: str) -> None:
+    token = os.getenv("SUPABASE_ACCESS_TOKEN")
+    if not token:
+        log_error("SUPABASE_ACCESS_TOKEN environment variable not set.")
+        return
+
+    npx_cmd = "npx.cmd" if os.name == "nt" else "npx"
+
+    try:
+        async with MCPTools(
+            f"{npx_cmd} -y @supabase/mcp-server-supabase@latest --access-token={token}"
+        ) as mcp:
+            instructions = dedent(f"""
+                You are an expert Supabase MCP architect. Given the project description:
+                {task}
+
+                Automatically perform the following steps :
+                1. Plan the entire database schema based on the project description.
+                2. Call `list_organizations` and select the first organization in the response.
+                3. Use `get_cost(type='project')` to estimate project creation cost and mention the cost in your response.
+                4. Create a new Supabase project with `create_project`, passing the confirmed cost ID.
+                5. Poll project status with `get_project` until the status is `ACTIVE_HEALTHY`.
+                6. Analyze the project requirements and propose a complete, normalized SQL schema (tables,  columns, data types, indexes, constraints, triggers, and functions) as DDL statements.
+                7. Apply the schema using `apply_migration`, naming the migration `initial_schema`.
+                8. Validate the deployed schema via `list_tables` and `list_extensions`.
+                8. Deploy a simple health-check edge function with `deploy_edge_function`.
+                9. Retrieve and print the project URL (`get_project_url`) and anon key (`get_anon_key`).
+            """)
+            agent = Agent(
+                model=OpenAIChat(id="o4-mini"),
+                instructions=instructions,
+                tools=[mcp, ReasoningTools(add_instructions=True)],
+                markdown=True,
+            )
+
+            log_info(f"Running Supabase project agent for: {task}")
+            await agent.aprint_response(
+                message=task,
+                stream=True,
+                show_full_reasoning=True,
+            )
+    except Exception as e:
+        log_exception(f"Unexpected error: {e}")
+
+
+if __name__ == "__main__":
+    demo_description = (
+        "Develop a cloud-based SaaS platform with AI-powered task suggestions, calendar syncing, predictive prioritization, "
+        "team collaboration, and project analytics."
+    )
+    asyncio.run(run_agent(demo_description))
+
+
+# Example prompts to try:
+"""
+A SaaS tool that helps businesses automate document processing using AI. Users can upload invoices, contracts, or PDFs and get structured data, smart summaries, and red flag alerts for compliance or anomalies. Ideal for legal teams, accountants, and enterprise back offices.
+
+An AI-enhanced SaaS platform for streamlining the recruitment process. Features include automated candidate screening using NLP, AI interview scheduling, bias detection in job descriptions, and pipeline analytics. Designed for fast-growing startups and mid-sized HR teams.
+
+An internal SaaS tool for HR departments to monitor employee wellbeing. Combines weekly mood check-ins, anonymous feedback, and AI-driven burnout detection models. Integrates with Slack and HR systems to support a healthier workplace culture.
+"""
+
+
+```
+
+
+### FILE: ./overview.mdx ###
+
+---
+title: What are Tools?
+sidebarTitle: Overview
+description: Tools are functions your Agno Agents can use to get things done.
+---
+
+Tools are what make Agents and Teams capable of real-world action. While using LLMs directly you can only generate text responses, Agents and Teams equipped with tools can interact with external systems and perform practical actions.
+
+Some examples of actions that can be performed with tools are: searching the web, running SQL, sending an email or calling APIs.
+
+Agno comes with 120+ pre-built toolkits, which you can use to give your Agents all kind of abilities. You can also write your own tools, to give your Agents even more capabilities. The general syntax is:
+
+```python
+import random
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools import tool
+
+def get_weather(city: str) -> str:
+    """Get the weather for the given city.
+    
+    Args:
+        city (str): The city to get the weather for.
+    """
+
+    # In a real implementation, this would call a weather API
+    weather_conditions = ["sunny", "cloudy", "rainy", "snowy", "windy"]
+    random_weather = random.choice(weather_conditions)
+
+    return f"The weather in {city} is {random_weather}."
+
+# To equipt our Agent with our tool, we simply pass it with the tools parameter
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-nano"),
+    tools=[get_weather],
+    markdown=True,
+)
+
+# Our Agent will now be able to use our tool, when it deems it relevant
+agent.print_response("What is the weather in San Francisco?", stream=True)
+```
+
+<Tip>
+In the example above, the `get_weather` function is a tool. When called, the tool result is shown in the output.
+</Tip>
+
+
+## How do tools work?
+
+The heart of Agent execution is the LLM loop. The typical execution flow of the LLM loop is:
+1. The agent sends the run context (system message, user message, chat history, etc) and tool definitions to the model.
+2. The model responds with a message or a tool call.
+3. If the model makes a tool call, the tool is executed and the result is returned to the model.
+4. The model processes the updated context, repeating this loop until it produces a final message without any tool calls.
+5. The agent returns this final response to the caller.
+
+### Tool definitions
+
+Agno automatically converts your tool functions into the required tool definition format for the model. Typically this is a JSON schema that describes the parameters and return type of the tool.
+
+For example:
+
+```python
+def get_weather(city: str) -> str:
+    """
+    Get the weather for a given city.
+
+    Args:
+        city (str): The city to get the weather for.
+    """
+    return f"The weather in {city} is sunny."
+```
+
+This will be converted into the following tool definition:
+
+```json
+{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a given city.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "The city to get the weather for."
+                }
+            },
+            "required": ["city"]
+        }
+    }
+}
+```
+
+This tool definition is then sent to the model so that it knows how to call the tool when it is requested. 
+You'll notice as well that the `Args` section is automatically stripped from the definition, parsed and used to populate the definitions of individualproperties.
+
+When using a Pydantic model in an argument of a tool function, Agno will automatically convert the model into the required tool definition format.
+
+For example:
+
+```python
+
+from pydantic import BaseModel, Field
+
+class GetWeatherRequest(BaseModel):
+    city: str = Field(description="The city to get the weather for")
+
+def get_weather(request: GetWeatherRequest) -> str:
+    """
+    Get the weather for a given city.
+
+    Args:
+        request (GetWeatherRequest): The request object containing the city to get the weather for.
+
+    """
+    return f"The weather in {request.city} is sunny."
+```
+
+This will be converted into the following tool definition:
+
+```json
+{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a given city.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "The city to get the weather for."
+                  }
+                },
+                "required": ["city"]
+              }
+            },
+            "required": ["request"]
+        }
+    }
+}
+```
+
+<Tip>
+ - Always create a docstring for your tool functions. Make sure to include the `Args` section and cover each of the arguments of the function.
+ - Use sensible names for your tool functions. Remember this is directly used by the model to call the tool when it is requested.
+</Tip>
+
+### Tool Execution
+
+When the model requests a tool call, the tool is executed and the result is returned to the model.
+
+- A model can request multiple tool calls in a single response.
+- When using `arun` to execute the agent or team, and the model requested multiple tool calls, the tools will be executed concurrently.
+
+Agno Agents can execute multiple tools concurrently, allowing you to process function calls that the model makes efficiently. This is especially valuable when the functions involve time-consuming operations. It improves responsiveness and reduces overall execution time.
+
+<Check>
+When you call `arun` or `aprint_response`, your tools will execute concurrently. If you provide synchronous functions as tools, they will execute concurrently on separate threads.
+</Check>
+
+<Note>
+  Concurrent execution of tools requires a model that supports parallel function
+  calling. For example, OpenAI models have a `parallel_tool_calls` parameter
+  (enabled by default) that allows multiple tool calls to be requested and
+  executed simultaneously.
+</Note>
+
+<Accordion title="Async Execution Example">
+
+```python async_tools.py
+import asyncio
+import time
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.utils.log import logger
+
+async def atask1(delay: int):
+    """Simulate a task that takes a random amount of time to complete
+    Args:
+        delay (int): The amount of time to delay the task
+    """
+    logger.info("Task 1 has started")
+    for _ in range(delay):
+        await asyncio.sleep(1)
+        logger.info("Task 1 has slept for 1s")
+    logger.info("Task 1 has completed")
+    return f"Task 1 completed in {delay:.2f}s"
+
+
+async def atask2(delay: int):
+    """Simulate a task that takes a random amount of time to complete
+    Args:
+        delay (int): The amount of time to delay the task
+    """
+    logger.info("Task 2 has started")
+    for _ in range(delay):
+        await asyncio.sleep(1)
+        logger.info("Task 2 has slept for 1s")
+    logger.info("Task 2 has completed")
+    return f"Task 2 completed in {delay:.2f}s"
+
+
+async def atask3(delay: int):
+    """Simulate a task that takes a random amount of time to complete
+    Args:
+        delay (int): The amount of time to delay the task
+    """
+    logger.info("Task 3 has started")
+    for _ in range(delay):
+        await asyncio.sleep(1)
+        logger.info("Task 3 has slept for 1s")
+    logger.info("Task 3 has completed")
+    return f"Task 3 completed in {delay:.2f}s"
+
+
+async_agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[atask2, atask1, atask3],
+    markdown=True,
+)
+
+asyncio.run(
+    async_agent.aprint_response("Please run all tasks with a delay of 3s", stream=True)
+)
+```
+
+In this example, `gpt-5-mini` makes three simultaneous tool calls to `atask1`, `atask2` and `atask3`. Normally these tool calls would execute sequentially, but using the `aprint_response` function, they run concurrently, improving execution time.
+
+<img
+  height="200"
+  src="/images/async-tools.png"
+  style={{ borderRadius: "8px" }}
+/>
+
+</Accordion>
+
+## Using a Toolkit
+
+An Agno Toolkit provides a way to manage multiple tools with additional control over their execution.
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+# Importing DuckDuckGo toolkit for web search
+from agno.tools.duckduckgo import DuckDuckGoTools
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[
+        DuckDuckGoTools(),
+    ],
+)
+
+agent.print_response("What's the latest about OpenAIs GPT-5?", markdown=True)
+```
+
+In this example, the `DuckDuckGoTools` toolkit is added to the agent. This toolkit enables the agent to search the web for information.
+
+## Tool Built-in Parameters
+
+Agno automatically provides special parameters to your tools that give access to the agent's parameters, state and other variables. These parameters are injected automatically - the agent doesn't need to know about them.
+
+### Using the Run Context
+
+You can access values from the current run via the `run_context` parameter: `run_context.session_state`, `run_context.dependencies`, `run_context.knowledge_filters`, `run_context.metadata`. See the [RunContext schema](/reference/run/run-context) for more information.
+
+This allows tools to access and modify persistent data across conversations.
+
+This is useful in cases where a tool result is relevant for the next steps of the conversation.
+
+Add `run_context` as a parameter in your tool function to access the agent's persistent state:
+
+```python
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from agno.models.openai import OpenAIChat
+from agno.run import RunContext
+
+
+def add_item(run_context: RunContext, item: str) -> str:
+    """Add an item to the shopping list."""
+    if not run_context.session_state:
+        run_context.session_state = {}
+
+    run_context.session_state["shopping_list"].append(item)  # type: ignore
+    return f"The shopping list is now {run_context.session_state['shopping_list']}"  # type: ignore
+
+
+# Create an Agent that maintains state
+agent = Agent(
+    model=OpenAIChat(id="gpt-4o-mini"),
+    # Initialize the session state with a counter starting at 0 (this is the default session state for all users)
+    session_state={"shopping_list": []},
+    db=SqliteDb(db_file="tmp/agents.db"),
+    tools=[add_item],
+    # You can use variables from the session state in the instructions
+    instructions="Current state (shopping list) is: {shopping_list}",
+    markdown=True,
+)
+
+# Example usage
+agent.print_response("Add milk, eggs, and bread to the shopping list", stream=True)
+print(f"Final session state: {agent.get_session_state()}")
+```
+
+See more in [Agent State](/basics/state/agent).
+
+### Using the Agent or Team
+
+You can access the `Agent` or `Team` instance directly in your tool function by adding `agent` or `team` as a parameter. This gives you full access to the agent's or team's properties like model, instructions, etc.
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+def get_agent_instructions(agent: Agent) -> str:
+    """Get the model of the agent."""
+    return agent.instructions
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    instructions="You are a helpful assistant that can answer questions about the model.",
+    tools=[get_agent_instructions],
+)
+
+agent.print_response("What is the instructions of the agent?", stream=True)
+```
+
+<Note>
+When using `team` as a parameter, make sure the tool is being used within a Team context. Similarly, use `agent` when the tool is used with an Agent.
+</Note>
+
+### Media Parameters
+
+The built-in parameter `images`, `videos`, `audio`, and `files` allows tools to access and modify the input media to an agent.
+
+<Note>
+Using the `send_media_to_model` parameter, you can control whether the media is sent to the model or not and using `store_media` parameter, you can control whether the
+media is stored in the `RunOutput` or not.
+</Note>
+
+See the [image input example](/basics/multimodal/agent/usage/image-input-for-tool) and [file input example](/basics/multimodal/agent/usage/file-input-for-tool) for an advanced example using media.
+
+## Tool Results
+
+Tools can return different types of results depending on their complexity and what they need to communicate back to the agent.
+
+### Simple Return Types
+
+Most tools can return simple Python types directly like `str`, `int`, `float`, `dict`, and `list`:
+
+```python
+@tool
+def get_weather(city: str) -> str:
+    """Get the weather for a city."""
+    return f"The weather in {city} is sunny and 75°F"
+
+@tool
+def calculate_sum(a: int, b: int) -> int:
+    """Calculate the sum of two numbers."""
+    return a + b
+
+@tool
+def get_user_info(user_id: str) -> dict:
+    """Get user information."""
+    return {
+        "user_id": user_id,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "status": "active"
+    }
+
+@tool
+def search_products(query: str) -> list:
+    """Search for products."""
+    return [
+        {"id": 1, "name": "Product A", "price": 29.99},
+        {"id": 2, "name": "Product B", "price": 39.99}
+    ]
+```
+
+### `ToolResult` for Media Content
+
+When your tool needs to return media artifacts (images, videos, audio), you **must** use `ToolResult`:
+
+<Snippet file="tool-result-reference.mdx" />
+
+```python
+from agno.tools.function import ToolResult
+from agno.media import Image
+
+@tool
+def generate_image(prompt: str) -> ToolResult:
+    """Generate an image from a prompt."""
+
+    # Create your image (example)
+    image_artifact = Image(
+        id="img_123",
+        url="https://example.com/generated-image.jpg",
+        original_prompt=prompt
+    )
+
+    return ToolResult(
+        content=f"Generated image for: {prompt}",
+        images=[image]
+    )
+```
+
+This would **make generated media available** to the LLM model.
+
+## Learn more
+
+<CardGroup cols={3}>
+  <Card href="/basics/tools/agent"
+  icon="robot"
+  iconType="duotone"
+  >
+    Learn how to use tools with agents
+  </Card>
+  <Card href="/basics/tools/team"
+  icon="users"
+  iconType="duotone"
+  >
+    Learn how to use tools with teams
+  </Card>
+  <Card
+    title="Available Toolkits"
+    icon="box-open"
+    href="/integrations/toolkits"
+  >
+    See the full list of available toolkits
+  </Card>
+  <Card
+    title="MCP Tools"
+    icon="robot"
+    href="/basics/tools/mcp"
+  >
+    Learn how to use MCP tools with Agno
+  </Card>
+  <Card
+    title="Reasoning Tools"
+    icon="brain-circuit"
+    href="/basics/tools/reasoning_tools"
+  >
+    Learn how to use reasoning tools with Agno
+  </Card>
+  <Card
+    title="Creating your own tools"
+    icon="code"
+    href="/basics/tools/creating-tools/overview"
+  >
+    Learn how to create your own tools
+  </Card>
+</CardGroup>
+
+### FILE: ./reasoning_tools/knowledge-tools.mdx ###
+
+---
+title: Knowledge Tools
+sidebarTitle: Knowledge Tools
+---
+
+The `KnowledgeTools` toolkit enables Agents to search, retrieve, and analyze information from knowledge bases. This toolkit integrates with `Knowledge` and provides a structured workflow for finding and evaluating relevant information before responding to users.
+
+The toolkit implements a "Think → Search → Analyze" cycle that allows an Agent to:
+1. Think through the problem and plan search queries
+2. Search the knowledge base for relevant information
+3. Analyze the results to determine if they are sufficient or if additional searches are needed
+
+This approach significantly improves an Agent's ability to provide accurate information by giving it tools to find, evaluate, and synthesize knowledge.
+
+The toolkit includes the following tools:
+
+- `think`: A scratchpad for planning, brainstorming keywords, and refining approaches. These thoughts remain internal to the Agent and are not shown to users.
+- `search`: Executes queries against the knowledge base to retrieve relevant documents.
+- `analyze`: Evaluates whether the returned documents are correct and sufficient, determining if further searches are needed.
+
+## Example
+
+Here's an example of how to use the `KnowledgeTools` toolkit:
+
+```python
+from agno.agent import Agent
+from agno.knowledge.embedder.openai import OpenAIEmbedder
+from agno.knowledge.knowledge import Knowledge
+from agno.models.openai import OpenAIChat
+from agno.tools.knowledge import KnowledgeTools
+from agno.vectordb.lancedb import LanceDb, SearchType
+
+# Create a knowledge base containing information from a URL
+agno_docs = Knowledge(
+    # Use LanceDB as the vector database and store embeddings in the `agno_docs` table
+    vector_db=LanceDb(
+        uri="tmp/lancedb",
+        table_name="agno_docs",
+        search_type=SearchType.hybrid,
+        embedder=OpenAIEmbedder(id="text-embedding-3-small"),
+    ),
+)
+agno_docs.add_content(
+    url="https://docs.agno.com/llms-full.txt"
+)
+
+knowledge_tools = KnowledgeTools(
+    knowledge=agno_docs,
+    think=True,
+    search=True,
+    analyze=True,
+    add_few_shot=True,
+)
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[knowledge_tools],
+    markdown=True,
+)
+
+if __name__ == "__main__":
+    agent.print_response("How do I build multi-agent teams with Agno?", stream=True)
+```
+
+The toolkit comes with default instructions and few-shot examples to help the Agent use the tools effectively. Here is how you can configure them:
+
+```python
+from agno.tools.knowledge import KnowledgeTools
+
+knowledge_tools = KnowledgeTools(
+    knowledge=my_knowledge_base,
+    think=True,                # Enable the think tool
+    search=True,               # Enable the search tool
+    analyze=True,              # Enable the analyze tool
+    add_instructions=True,     # Add default instructions
+    add_few_shot=True,         # Add few-shot examples
+    few_shot_examples=None,    # Optional custom few-shot examples
+)
+```
+### FILE: ./reasoning_tools/memory-tools.mdx ###
+
+---
+title: Memory Tools
+sidebarTitle: Memory Tools
+---
+
+The `MemoryTools` toolkit enables Agents to manage user memories through create, update, and delete operations. This toolkit integrates with a provided database where memories are stored.
+
+The toolkit implements a "Think → Operate → Analyze" cycle that allows an Agent to:
+1. Think through memory management requirements and plan operations
+2. Execute memory operations (add, update, delete) on the database
+3. Analyze the results to ensure operations completed successfully and meet requirements
+
+This approach gives Agents the ability to persistently store, retrieve, and manage user information, preferences, and context across conversations.
+
+The toolkit includes the following tools:
+
+- `think`: A scratchpad for planning memory operations, brainstorming content, and refining approaches. These thoughts remain internal to the Agent and are not shown to users.
+- `get_memories`: Gets a list of memories for the current user from the database.
+- `add_memory`: Creates new memories in the database with specified content and optional topics.
+- `update_memory`: Modifies existing memories by memory ID, allowing updates to content and topics.
+- `delete_memory`: Removes memories from the database by memory ID.
+- `analyze`: Evaluates whether memory operations completed successfully and produced the expected results.
+
+## Example
+
+Here's an example of how to use the `MemoryTools` toolkit:
+
+```python
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from agno.models.openai import OpenAIChat
+from agno.tools.memory import MemoryTools
+
+# Create a database connection
+db = SqliteDb(
+    db_file="tmp/memory.db"
+)
+
+memory_tools = MemoryTools(
+    db=db,
+)
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[memory_tools],
+    markdown=True,
+)
+
+agent.print_response(
+    "My name is John Doe and I like to hike in the mountains on weekends. "
+    "I like to travel to new places and experience different cultures. "
+    "I am planning to travel to Africa in December. ",
+    user_id="john_doe@example.com",
+    stream=True
+)
+
+# This won't use the session history, but instead will use the memory tools to get the memories
+agent.print_response("What have you remembered about me?", stream=True, user_id="john_doe@example.com")
+```
+
+
+Here is how you can configure the toolkit:
+
+```python
+from agno.tools.memory import MemoryTools
+
+memory_tools = MemoryTools(
+    db=my_database,
+    enable_think=True,            # Enable the think tool (true by default)
+    enable_get_memories=True,     # Enable the get_memories tool (true by default)
+    enable_add_memory=True,       # Enable the add_memory tool (true by default)
+    enable_update_memory=True,    # Enable the update_memory tool (true by default)
+    enable_delete_memory=True,    # Enable the delete_memory tool (true by default)
+    enable_analyze=True,          # Enable the analyze tool (true by default)
+    add_instructions=True,        # Add default instructions
+    instructions=None,            # Optional custom instructions
+    add_few_shot=True,           # Add few-shot examples
+    few_shot_examples=None,      # Optional custom few-shot examples
+)
+```
+
+### FILE: ./reasoning_tools/reasoning-tools.mdx ###
+
+---
+title: Reasoning Tools
+sidebarTitle: Reasoning Tools
+---
+
+The `ReasoningTools` toolkit allows an Agent to use reasoning like any other tool, at any point during execution. Unlike traditional approaches that reason once at the start to create a fixed plan, this enables the Agent to reflect after each step, adjust its thinking, and update its actions on the fly.
+
+We've found that this approach significantly improves an Agent's ability to solve complex problems it would otherwise fail to handle. By giving the Agent space to "think" about its actions, it can examine its own responses more deeply, question its assumptions, and approach the problem from different angles.
+
+The toolkit includes the following tools:
+
+- `think`: This tool is used as a scratchpad by the Agent to reason about the question and work through it step by step. It helps break down complex problems into smaller, manageable chunks and track the reasoning process.
+- `analyze`: This tool is used to analyze the results from a reasoning step and determine the next actions.
+
+## Example
+
+Here's an example of how to use the `ReasoningTools` toolkit:
+
+```python
+from agno.agent import Agent
+from agno.models.anthropic import Claude
+from agno.tools.reasoning import ReasoningTools
+from agno.tools.yfinance import YFinanceTools
+
+thinking_agent = Agent(
+    model=Claude(id="claude-3-7-sonnet-latest"),
+    tools=[
+        ReasoningTools(add_instructions=True),
+        YFinanceTools(
+            stock_price=True,
+            analyst_recommendations=True,
+            company_info=True,
+            company_news=True,
+        ),
+    ],
+    instructions="Use tables where possible",
+    markdown=True,
+)
+
+thinking_agent.print_response("Write a report comparing NVDA to TSLA", stream=True)
+```
+
+The toolkit comes with default instructions and few-shot examples to help the Agent use the tool effectively. Here is how you can enable them:
+
+```python
+reasoning_agent = Agent(
+    model=Claude(id="claude-3-7-sonnet-latest"),
+    tools=[
+        ReasoningTools(
+            think=True,
+            analyze=True,
+            add_instructions=True,
+            add_few_shot=True,
+        ),
+    ],
+)
+```
+
+`ReasoningTools` can be used with any model provider that supports function calling. Here is an example with of a reasoning Agent using `OpenAIChat`:
+
+```python
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.reasoning import ReasoningTools
+
+reasoning_agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[ReasoningTools(add_instructions=True)],
+    instructions=dedent("""\
+        You are an expert problem-solving assistant with strong analytical skills! 🧠
+
+        Your approach to problems:
+        1. First, break down complex questions into component parts
+        2. Clearly state your assumptions
+        3. Develop a structured reasoning path
+        4. Consider multiple perspectives
+        5. Evaluate evidence and counter-arguments
+        6. Draw well-justified conclusions
+
+        When solving problems:
+        - Use explicit step-by-step reasoning
+        - Identify key variables and constraints
+        - Explore alternative scenarios
+        - Highlight areas of uncertainty
+        - Explain your thought process clearly
+        - Consider both short and long-term implications
+        - Evaluate trade-offs explicitly
+
+        For quantitative problems:
+        - Show your calculations
+        - Explain the significance of numbers
+        - Consider confidence intervals when appropriate
+        - Identify source data reliability
+
+        For qualitative reasoning:
+        - Assess how different factors interact
+        - Consider psychological and social dynamics
+        - Evaluate practical constraints
+        - Address value considerations
+        \
+    """),
+    add_datetime_to_context=True,
+    stream_events=True,
+    markdown=True,
+)
+```
+
+This Agent can be used to ask questions that elicit thoughtful analysis, such as:
+
+```python
+reasoning_agent.print_response(
+    "A startup has $500,000 in funding and needs to decide between spending it on marketing or "
+    "product development. They want to maximize growth and user acquisition within 12 months. "
+    "What factors should they consider and how should they analyze this decision?",
+    stream=True
+)
+```
+
+or,
+
+```python
+reasoning_agent.print_response(
+    "Solve this logic puzzle: A man has to take a fox, a chicken, and a sack of grain across a river. "
+    "The boat is only big enough for the man and one item. If left unattended together, the fox will "
+    "eat the chicken, and the chicken will eat the grain. How can the man get everything across safely?",
+    stream=True,
+)
+```
+
+### FILE: ./reasoning_tools/workflow-tools.mdx ###
+
+---
+title: Workflow Tools
+sidebarTitle: Workflow Tools
+---
+
+The `WorkflowTools` toolkit enables Agents to execute, analyze, and reason about workflow operations. This toolkit integrates with `Workflow` and provides a structured approach for running workflows and evaluating their results.
+
+The toolkit implements a "Think → Run → Analyze" cycle that allows an Agent to:
+1. Think through the problem and plan workflow inputs and execution strategy
+2. Execute the workflow with appropriate inputs and parameters
+3. Analyze the results to determine if they are sufficient or if additional workflow runs are needed
+
+This approach significantly improves an Agent's ability to successfully execute complex workflows by giving it tools to plan, execute, and evaluate workflow operations.
+
+The toolkit includes the following tools:
+
+- `think`: A scratchpad for planning workflow execution, brainstorming inputs, and refining approaches. These thoughts remain internal to the Agent and are not shown to users.
+- `run_workflow`: Executes the workflow with specified inputs and additional parameters.
+- `analyze`: Evaluates whether the workflow execution results are correct and sufficient, determining if further workflow runs are needed.
+
+<Tip>
+Reasoning is not enabled by default on this toolkit. You can enable it by setting `enable_think=True` and `enable_analyze=True`.
+</Tip>
+
+
+
+## Example
+
+Here's an example of how to use the `WorkflowTools` toolkit:
+
+```python
+import asyncio
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from agno.models.openai import OpenAIChat
+from agno.team import Team
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.hackernews import HackerNewsTools
+from agno.tools.workflow import WorkflowTools
+from agno.workflow.types import StepInput, StepOutput
+from agno.workflow.workflow import Workflow
+
+FEW_SHOT_EXAMPLES = dedent("""\
+    You can refer to the examples below as guidance for how to use each tool.
+    ### Examples
+    #### Example: Blog Post Workflow
+    User: Please create a blog post on the topic: AI Trends in 2024
+    Run: input_data="AI trends in 2024", additional_data={"topic": "AI, AI agents, AI workflows", "style": "The blog post should be written in a style that is easy to understand and follow."}
+    Final Answer: I've created a blog post on the topic: AI trends in 2024 through the workflow. The blog post shows...
+    
+    You HAVE TO USE additional_data to pass the topic and style to the workflow.
+""")
+
+
+# Define agents
+web_agent = Agent(
+    name="Web Agent",
+    model=OpenAIChat(id="gpt-4o-mini"),
+    tools=[DuckDuckGoTools()],
+    role="Search the web for the latest news and trends",
+)
+hackernews_agent = Agent(
+    name="Hackernews Agent",
+    model=OpenAIChat(id="gpt-4o-mini"),
+    tools=[HackerNewsTools()],
+    role="Extract key insights and content from Hackernews posts",
+)
+
+writer_agent = Agent(
+    name="Writer Agent",
+    model=OpenAIChat(id="gpt-4o-mini"),
+    instructions="Write a blog post on the topic",
+)
+
+
+def prepare_input_for_web_search(step_input: StepInput) -> StepOutput:
+    title = step_input.input
+    topic = step_input.additional_data.get("topic")
+    return StepOutput(
+        content=dedent(f"""\
+	I'm writing a blog post with the title: {title}
+	<topic>
+	{topic}
+	</topic>
+	Search the web for atleast 10 articles\
+	""")
+    )
+
+
+def prepare_input_for_writer(step_input: StepInput) -> StepOutput:
+    title = step_input.additional_data.get("title")
+    topic = step_input.additional_data.get("topic")
+    style = step_input.additional_data.get("style")
+
+    research_team_output = step_input.previous_step_content
+
+    return StepOutput(
+        content=dedent(f"""\
+	I'm writing a blog post with the title: {title}
+	<required_style>
+	{style}
+	</required_style>
+	<topic>
+	{topic}
+	</topic>
+	Here is information from the web:
+	<research_results>
+	{research_team_output}
+	<research_results>\
+	""")
+    )
+
+
+# Define research team for complex analysis
+research_team = Team(
+    name="Research Team",
+    members=[hackernews_agent, web_agent],
+    instructions="Research tech topics from Hackernews and the web",
+)
+
+
+content_creation_workflow = Workflow(
+    name="Blog Post Workflow",
+    description="Automated blog post creation from Hackernews and the web",
+    db=SqliteDb(
+        session_table="workflow_session",
+        db_file="tmp/workflow.db",
+    ),
+    steps=[
+        prepare_input_for_web_search,
+        research_team,
+        prepare_input_for_writer,
+        writer_agent,
+    ],
+)
+
+workflow_tools = WorkflowTools(
+    workflow=content_creation_workflow,
+    add_few_shot=True,
+    few_shot_examples=FEW_SHOT_EXAMPLES,
+    async_mode=True,
+)
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[workflow_tools],
+    markdown=True,
+)
+
+asyncio.run(agent.aprint_response(
+    "Create a blog post with the following title: Quantum Computing in 2025",
+    instructions="When you run the workflow using the `run_workflow` tool, remember to pass `additional_data` as a dictionary of key-value pairs.",
+    stream=True,
+    debug_mode=True,
+))
+```
+
+Here is how you can configure the toolkit:
+
+```python
+from agno.tools.workflow import WorkflowTools
+
+workflow_tools = WorkflowTools(
+    workflow=my_workflow,
+    enable_think=True,            # Enable the think tool
+    enable_run_workflow=True,     # Enable the run_workflow tool (true by default)
+    enable_analyze=True,          # Enable the analyze tool
+    add_instructions=True,        # Add default instructions
+    instructions=None,            # Optional custom instructions
+    add_few_shot=True,           # Add few-shot examples
+    few_shot_examples=None,      # Optional custom few-shot examples
+    async_mode=False,            # Set to True for async workflow execution
+)
+```
+
+## Async Support
+
+The `WorkflowTools` toolkit supports both synchronous and asynchronous workflow execution:
+
+```python
+# For async workflow execution
+workflow_tools = WorkflowTools(
+    workflow=my_async_workflow,
+    async_mode=True,  # This will use async versions of the tools
+    enable_run_workflow=True,
+)
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[workflow_tools],
+)
+
+await agent.arun(...)
+```
+
+### FILE: ./selecting-tools.mdx ###
+
+---
+title: Including and excluding tools
+sidebarTitle: Including and excluding tools
+description: Learn how to include and exclude tools from a Toolkit.
+mode: wide
+---
+
+You can specify which tools to include or exclude from a `Toolkit` by using the `include_tools` and `exclude_tools` parameters. This can be very useful to limit the number of tools that are available to an Agent.
+
+For example, here's how to include only the `get_latest_emails` tool in the `GmailTools` toolkit:
+
+```python
+agent = Agent(
+    tools=[GmailTools(include_tools=["get_latest_emails"])],
+)
+```
+
+Similarly, here's how to exclude the `create_draft_email` tool from the `GmailTools` toolkit:
+
+```python
+agent = Agent(
+    tools=[GmailTools(exclude_tools=["create_draft_email"])],
+)
+```
+
+## Example
+
+Here's an example of how to use the `include_tools` and `exclude_tools` parameters to limit the number of tools that are available to an Agent:
+
+```python include_exclude_tools.py
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.calculator import CalculatorTools
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.yfinance import YFinanceTools
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[
+        CalculatorTools(
+            exclude_tools=["exponentiate", "factorial", "is_prime", "square_root"],
+        ),
+        DuckDuckGoTools(include_tools=["duckduckgo_search"]),
+    ],
+    markdown=True,
+)
+
+agent.print_response(
+    "Search the web for a difficult sum that can be done with normal arithmetic and solve it.",
+)
+```
+
+
+
+
+
+
+### FILE: ./team.mdx ###
+
+---
+title: Team Tools
+sidebarTitle: Overview
+description: Learn how to use tools in Agno to build AI teams.
+---
+
+TBD
+### FILE: ./tool-call-limit.mdx ###
+
+---
+title: Tool Call Limit
+description: Learn to limit the number of tool calls an agent can make.
+---
+
+Limiting the number of tool calls an Agent can make is useful to prevent loops and have better control over costs and performance.
+
+Doing this is very simple with Agno. You just need to pass the `tool_call_limit` parameter when initializing your Agent or Team.
+
+For example:
+
+```python
+from agno.agent import Agent
+from agno.models.openai.chat import OpenAIChat
+from agno.tools.yfinance import YFinanceTools
+
+agent = Agent(
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[YFinanceTools(company_news=True, cache_results=True)],
+    tool_call_limit=1, # The Agent will not perform more than one tool call.
+)
+
+# The first tool call will be performed. The second one will fail gracefully.
+agent.print_response(
+    "Find me the current price of TSLA, then after that find me the latest news about Tesla.",
+    stream=True,
+)
+
+```
+
+<Tip>
+Important to consider:
+- If the Agent tries to run a number of tool calls that exceeds the limit **all at once**, the limit will remain effective. Only as many tool calls as allowed will be performed.
+- The limit is enforced **across a full run**, and not per individual requests triggered by the Agent.
+</Tip>
+### FILE: ./usage/async-team-with-tools.mdx ###
+
+---
+title: "Async Team with Tools"
+---
+
+This example demonstrates how to create an async team with various tools for information gathering using multiple agents with different tools (Wikipedia, DuckDuckGo, AgentQL) to gather comprehensive information asynchronously.
+
+## Code
+
+```python cookbook/02_examples/teams/tools/03_async_team_with_tools.py
+"""
+This example demonstrates how to create an async team with various tools for information gathering.
+
+The team uses multiple agents with different tools (Wikipedia, DuckDuckGo, AgentQL) to
+gather comprehensive information about a company asynchronously.
+"""
+
+import asyncio
+from uuid import uuid4
+
+from agno.agent.agent import Agent
+from agno.models.anthropic import Claude
+from agno.models.mistral import MistralChat
+from agno.models.openai import OpenAIChat
+from agno.team import Team
+from agno.tools.agentql import AgentQLTools
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.wikipedia import WikipediaTools
+
+# Wikipedia search agent
+wikipedia_agent = Agent(
+    name="Wikipedia Agent",
+    role="Search wikipedia for information",
+    model=MistralChat(id="mistral-large-latest"),
+    tools=[WikipediaTools()],
+    instructions=[
+        "Find information about the company in the wikipedia",
+    ],
+)
+
+# Web search agent
+website_agent = Agent(
+    name="Website Agent",
+    role="Search the website for information",
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools()],
+    instructions=[
+        "Search the website for information",
+    ],
+)
+
+# Define custom AgentQL query for specific data extraction (see https://docs.agentql.com/basics/query-language)
+custom_query = """
+{
+    title
+    text_content[]
+}
+"""
+
+# Generate unique IDs
+user_id = str(uuid4())
+id = str(uuid4())
+
+# Create the company information gathering team
+company_info_team = Team(
+    name="Company Info Team",
+    id=id,
+    model=Claude(id="claude-3-7-sonnet-latest"),
+    tools=[AgentQLTools(agentql_query=custom_query)],
+    members=[
+        wikipedia_agent,
+        website_agent,
+    ],
+    markdown=True,
+    instructions=[
+        "You are a team that finds information about a company.",
+        "First search the web and wikipedia for information about the company.",
+        "If you can find the company's website URL, then scrape the homepage and the about page.",
+    ],
+    show_members_responses=True,
+)
+
+if __name__ == "__main__":
+    asyncio.run(
+        company_info_team.aprint_response(
+            "Write me a full report on everything you can find about Agno, the company building AI agent infrastructure.",
+            stream=True,
+        )
+    )
+```
+
+## Usage
+
+<Steps>
+
+    <Snippet file="create-venv-step.mdx" />
+
+    <Step title="Install required libraries">
+        ```bash
+        pip install agno wikipedia ddgs agentql
+        ```
+    </Step>
+
+    <Step title="Set environment variables">
+        ```bash
+        export OPENAI_API_KEY=****
+        export ANTHROPIC_API_KEY=****
+        export MISTRAL_API_KEY=****
+        export AGENTQL_API_KEY=****
+        ```
+    </Step>
+
+    <Step title="Run the agent">
+        ```bash
+        python cookbook/02_examples/teams/tools/03_async_team_with_tools.py
+        ```
+    </Step>
+
+</Steps>
+### FILE: ./usage/team-with-custom-tools.mdx ###
+
+---
+title: "Team with Custom Tools"
+---
+
+This example demonstrates how to create a team with custom tools, using custom tools alongside agent tools to answer questions from a knowledge base and fall back to web search when needed.
+
+## Code
+
+```python cookbook/02_examples/teams/tools/01_team_with_custom_tools.py
+"""
+This example demonstrates how to create a team with custom tools.
+
+The team uses custom tools alongside agent tools to answer questions from a knowledge base
+and fall back to web search when needed.
+"""
+
+from agno.agent import Agent
+from agno.team.team import Team
+from agno.tools import tool
+from agno.tools.duckduckgo import DuckDuckGoTools
+
+
+@tool()
+def answer_from_known_questions(question: str) -> str:
+    """Answer a question from a list of known questions
+
+    Args:
+        question: The question to answer
+
+    Returns:
+        The answer to the question
+    """
+
+    # FAQ knowledge base
+    faq = {
+        "What is the capital of France?": "Paris",
+        "What is the capital of Germany?": "Berlin",
+        "What is the capital of Italy?": "Rome",
+        "What is the capital of Spain?": "Madrid",
+        "What is the capital of Portugal?": "Lisbon",
+        "What is the capital of Greece?": "Athens",
+        "What is the capital of Turkey?": "Ankara",
+    }
+
+    # Check if question is in FAQ
+    if question in faq:
+        return f"From my knowledge base: {faq[question]}"
+    else:
+        return "I don't have that information in my knowledge base. Try asking the web search agent."
+
+
+# Create web search agent for fallback
+web_agent = Agent(
+    name="Web Agent",
+    role="Search the web for information",
+    tools=[DuckDuckGoTools()],
+    markdown=True,
+)
+
+# Create team with custom tool and agent members
+team = Team(name="Q & A team", members=[web_agent], tools=[answer_from_known_questions])
+
+# Test the team
+team.print_response("What is the capital of France?", stream=True)
+
+# Check if team has session state and display information
+print("\n📊 Team Session Info:")
+session = team.get_session()
+print(f"   Session ID: {session.session_id}")
+print(f"   Session State: {session.session_data['session_state']}")
+
+# Show team capabilities
+print("\n🔧 Team Tools Available:")
+for t in team.tools:
+    print(f"   - {t.name}: {t.description}")
+
+print("\n👥 Team Members:")
+for member in team.members:
+    print(f"   - {member.name}: {member.role}")
+```
+
+## Usage
+
+<Steps>
+
+    <Snippet file="create-venv-step.mdx" />
+
+    <Step title="Install required libraries">
+        ```bash
+        pip install agno ddgs
+        ```
+    </Step>
+
+    <Step title="Set environment variables">
+        ```bash
+        export OPENAI_API_KEY=****
+        ```
+    </Step>
+
+    <Step title="Run the agent">
+        ```bash
+        python cookbook/02_examples/teams/tools/01_team_with_custom_tools.py
+        ```
+    </Step>
+
+</Steps>
+### FILE: ./usage/team-with-tool-hooks.mdx ###
+
+---
+title: "Team with Tool Hooks"
+---
+
+This example demonstrates how to use tool hooks with teams and agents for intercepting and monitoring tool function calls, providing logging, timing, and other observability features.
+
+## Code
+
+```python cookbook/02_examples/teams/tools/02_team_with_tool_hooks.py
+"""
+This example demonstrates how to use tool hooks with teams and agents.
+
+Tool hooks allow you to intercept and monitor tool function calls, providing
+logging, timing, and other observability features.
+"""
+
+import time
+from typing import Any, Callable, Dict
+from uuid import uuid4
+
+from agno.agent.agent import Agent
+from agno.models.anthropic import Claude
+from agno.models.openai import OpenAIChat
+from agno.team import Team
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.reddit import RedditTools
+from agno.utils.log import logger
+
+
+def logger_hook(function_name: str, function_call: Callable, arguments: Dict[str, Any]):
+    """
+    Tool hook that logs function calls and measures execution time.
+
+    Args:
+        function_name: Name of the function being called
+        function_call: The actual function to call
+        arguments: Arguments passed to the function
+
+    Returns:
+        The result of the function call
+    """
+    if function_name == "delegate_task_to_member":
+        member_id = arguments.get("member_id")
+        logger.info(f"Delegating task to member {member_id}")
+
+    # Start timer
+    start_time = time.time()
+    result = function_call(**arguments)
+    # End timer
+    end_time = time.time()
+    duration = end_time - start_time
+    logger.info(f"Function {function_name} took {duration:.2f} seconds to execute")
+    return result
+
+
+# Reddit search agent with tool hooks
+reddit_agent = Agent(
+    name="Reddit Agent",
+    id="reddit-agent",
+    role="Search reddit for information",
+    tools=[RedditTools(cache_results=True)],
+    instructions=[
+        "Find information about the company on Reddit",
+    ],
+    tool_hooks=[logger_hook],
+)
+
+# Web search agent with tool hooks
+website_agent = Agent(
+    name="Website Agent",
+    id="website-agent",
+    role="Search the website for information",
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools(cache_results=True)],
+    instructions=[
+        "Search the website for information",
+    ],
+    tool_hooks=[logger_hook],
+)
+
+# Generate unique user ID
+user_id = str(uuid4())
+
+# Create team with tool hooks
+company_info_team = Team(
+    name="Company Info Team",
+    model=Claude(id="claude-3-7-sonnet-latest"),
+    members=[
+        reddit_agent,
+        website_agent,
+    ],
+    markdown=True,
+    instructions=[
+        "You are a team that finds information about a company.",
+        "First search the web and wikipedia for information about the company.",
+        "If you can find the company's website URL, then scrape the homepage and the about page.",
+    ],
+    show_members_responses=True,
+    tool_hooks=[logger_hook],
+)
+
+if __name__ == "__main__":
+    company_info_team.print_response(
+        "Write me a full report on everything you can find about Agno, the company building AI agent infrastructure.",
+        stream=True,
+    )
+```
+
+## Usage
+
+<Steps>
+
+    <Snippet file="create-venv-step.mdx" />
+
+    <Step title="Install required libraries">
+        ```bash
+        pip install agno ddgs
+        ```
+    </Step>
+
+    <Step title="Set environment variables">
+        ```bash
+        export OPENAI_API_KEY=****
+        export ANTHROPIC_API_KEY=****
+        export REDDIT_CLIENT_ID=****
+        export REDDIT_CLIENT_SECRET=****
+        export REDDIT_USER_AGENT=****
+        ```
+    </Step>
+
+    <Step title="Run the agent">
+        ```bash
+        python cookbook/02_examples/teams/tools/02_team_with_tool_hooks.py
+        ```
+    </Step>
+
+</Steps>

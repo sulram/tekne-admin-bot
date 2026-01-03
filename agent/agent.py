@@ -9,7 +9,6 @@ import time
 from agno.agent import Agent
 from agno.models.anthropic import Claude
 from agno.db.in_memory import InMemoryDb
-from agno.db.redis import RedisDb
 
 from config import CLAUDE_MD_PATH, CLAUDE_INPUT_PRICE_PER_1M, CLAUDE_OUTPUT_PRICE_PER_1M, REDIS_URL
 from core.callbacks import send_status, set_current_session
@@ -103,11 +102,16 @@ def get_agent_db():
     redis_client = get_redis_client()
 
     if redis_client is not None:
-        logger.info("✅ Using RedisDb for agent memory")
-        return RedisDb(
-            db_url=REDIS_URL,
-            session_table="agent_sessions",  # Correct parameter name per Agno docs
-        )
+        try:
+            from agno.db.redis import RedisDb
+            logger.info("✅ Using RedisDb for agent memory")
+            return RedisDb(
+                db_url=REDIS_URL,
+                session_table="agent_sessions",  # Correct parameter name per Agno docs
+            )
+        except ImportError:
+            logger.warning("⚠️  Redis module not available, using InMemoryDb (sessions won't persist)")
+            return InMemoryDb()
     else:
         logger.warning("⚠️  Redis unavailable, using InMemoryDb (sessions won't persist)")
         return InMemoryDb()

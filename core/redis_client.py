@@ -5,19 +5,17 @@ Provides connection pooling and graceful fallback
 
 import logging
 from typing import Optional
-import redis
-from redis.exceptions import RedisError, ConnectionError
 
 from config import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
 # Global Redis client instance
-_redis_client: Optional[redis.Redis] = None
+_redis_client: Optional[any] = None  # Use any instead of redis.Redis to avoid import
 _redis_available = None  # None = not tried yet, True = connected, False = failed
 
 
-def get_redis_client() -> Optional[redis.Redis]:
+def get_redis_client() -> Optional[any]:
     """
     Get Redis client singleton
 
@@ -35,6 +33,10 @@ def get_redis_client() -> Optional[redis.Redis]:
         return None
 
     try:
+        # Import redis only when needed
+        import redis
+        from redis.exceptions import RedisError, ConnectionError
+
         # Log connection attempt (hide password)
         safe_url = REDIS_URL.replace(REDIS_URL.split('@')[0].split(':')[-1], '****') if '@' in REDIS_URL else REDIS_URL
         logger.info(f"🔌 Attempting Redis connection: {safe_url}")
@@ -56,14 +58,13 @@ def get_redis_client() -> Optional[redis.Redis]:
         logger.info(f"✅ Redis connected: {safe_url}")
         return _redis_client
 
-    except (RedisError, ConnectionError) as e:
-        logger.error(f"❌ Redis connection failed: {type(e).__name__}: {e}")
-        logger.error(f"   URL attempted: {safe_url}")
+    except ImportError:
+        logger.warning("⚠️ Redis module not installed - running without persistence")
         _redis_available = False
         _redis_client = None
         return None
     except Exception as e:
-        logger.error(f"❌ Unexpected Redis error: {type(e).__name__}: {e}")
+        logger.error(f"❌ Redis connection failed: {type(e).__name__}: {e}")
         _redis_available = False
         _redis_client = None
         return None

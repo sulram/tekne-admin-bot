@@ -38,11 +38,20 @@ async def start_proposal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Create/reset session
     create_session(user_id, session_id)
 
-    # Send initial message to agent
-    initial_message = "Olá! Liste as 10 propostas mais recentes. O que você gostaria de fazer: criar uma nova proposta ou editar uma existente?"
+    # List proposals directly (bypass Team for reliability)
+    from agent.tools import list_existing_proposals
 
-    async with AgentProcessor(update, user_id) as processor:
-        await processor.process(initial_message, status_text="🚀 Iniciando gerador de propostas...")
+    try:
+        proposals_text = list_existing_proposals(limit=10)
+
+        # Format response
+        response = f"📋 **Propostas Recentes:**\n\n{proposals_text}\n\n💡 O que você gostaria de fazer?\n• Criar uma nova proposta\n• Editar uma proposta existente"
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+        logger.error(f"Error listing proposals: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Erro ao listar propostas: {str(e)}")
 
 
 # ============================================================================

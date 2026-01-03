@@ -63,21 +63,21 @@ async def show_progress(status_msg) -> None:
 
     try:
         while True:
-            # Update message every 3 seconds, spinner every 0.3s
-            if elapsed % 10 == 0:  # Every 3 seconds
+            # Update message every 5 seconds to avoid Telegram rate limits
+            if elapsed % 5 == 0:  # Every 5 seconds
                 current_message = messages[message_idx % len(messages)]
                 message_idx += 1
+                spinner = spinners[spinner_idx % len(spinners)]
 
-            spinner = spinners[spinner_idx % len(spinners)]
+                try:
+                    await status_msg.edit_text(f"{spinner} {current_message}...")
+                except Exception:
+                    # Ignore errors if message hasn't changed or rate limited
+                    pass
 
-            try:
-                await status_msg.edit_text(f"{spinner} {current_message}...")
-            except Exception:
-                # Ignore errors if message hasn't changed or rate limited
-                pass
+                spinner_idx += 1
 
-            await asyncio.sleep(0.3)
-            spinner_idx += 1
+            await asyncio.sleep(1.0)  # Check every second, update every 5
             elapsed += 1
 
     except asyncio.CancelledError:

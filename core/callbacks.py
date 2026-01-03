@@ -10,8 +10,11 @@ Design:
 - Tools call send_status() without args (session auto-detected)
 """
 
+import logging
 import threading
 from typing import Optional, Callable, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Thread-local storage for current session_id
 _thread_local = threading.local()
@@ -57,6 +60,9 @@ def send_status(message: str) -> None:
     Thread-safe: each session has isolated callback.
     """
     session_id = get_current_session()
+    # Log ALL messages sent to Telegram
+    logger.info(f"📤 [Telegram → {session_id}] {message[:200]}")  # First 200 chars
+
     if session_id and session_id in _session_callbacks:
         callback = _session_callbacks[session_id][0]
         if callback:

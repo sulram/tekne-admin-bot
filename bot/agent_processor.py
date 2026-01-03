@@ -215,14 +215,14 @@ class AgentProcessor:
         - Session validation
         - Status message creation
         - Callback setup
-        - Agent execution
+        - Team execution (CopyMaster + Reviewer)
         - Error handling
 
         Args:
             message: Message to send to agent
             status_text: Text to show in status message
         """
-        from agent.agent import get_agent_response
+        from agent.team import run_team  # Use Team directly
         from bot.utils import send_long_message, show_progress
         from core.callbacks import set_status_callback, set_session_state_callback
         import httpcore
@@ -237,8 +237,8 @@ class AgentProcessor:
             return
 
         try:
-            # Create status message
-            self.status_msg = await self.update.message.reply_text(status_text)
+            # Create status message (simple, no spinner)
+            self.status_msg = await self.update.message.reply_text("💭 Processando...")
 
             # Mutable reference for callback
             progress_ref = [None]
@@ -251,16 +251,13 @@ class AgentProcessor:
             set_status_callback(self.session_id, status_callback)
             set_session_state_callback(self.session_id, session_state_callback)
 
-            # Start progress indicator
-            logger.info("Starting progress indicator")
-            self.progress_task = asyncio.create_task(show_progress(self.status_msg))
-            progress_ref[0] = self.progress_task
+            # NO SPINNER - Telegram will be more responsive with reasoning messages
+            # The status_callback will send real-time updates as they happen
 
-            # Process with agent
-            logger.info(f"Sending to agent (session {self.session_id}): {message[:50]}...")
-
-            # Run agent in thread pool to avoid blocking event loop
-            response = await self._loop.run_in_executor(None, get_agent_response, message, self.session_id)
+            # Process with Team (CopyMaster + Reviewer)
+            logger.info(f"🤖 [TEAM] Sending to team (session {self.session_id}): {message[:50]}...")
+            # Run team in thread pool to avoid blocking event loop
+            response = await self._loop.run_in_executor(None, run_team, message, self.session_id)
 
             logger.info(f"Agent response length: {len(response)} chars")
 

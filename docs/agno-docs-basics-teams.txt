@@ -1,0 +1,3268 @@
+### FILE: ./building-teams.mdx ###
+
+---
+title: Building Teams
+sidebarTitle: Building Teams
+description: Learn how to build Teams with Agno.
+keywords: [teams, building teams, building teams with agno, building teams with agno agents]
+---
+
+To build effective teams, start simple -- just a model, team members, and instructions. Once that works, add more functionality as needed.
+
+Here's a minimal example of a team with specialized agents:
+
+```python news_weather_team.py
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.duckduckgo import DuckDuckGoTools
+
+# Create specialized agents
+news_agent = Agent(
+    id="news-agent",
+    name="News Agent",
+    role="Get the latest news and provide summaries",
+    tools=[DuckDuckGoTools()]
+)
+
+weather_agent = Agent(
+    id="weather-agent",
+    name="Weather Agent",
+    role="Get weather information and forecasts",
+    tools=[DuckDuckGoTools()]
+)
+
+# Create the team
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o"),
+    instructions="Coordinate with team members to provide comprehensive information. Delegate tasks based on the user's request."
+)
+
+team.print_response("What's the latest news and weather in Tokyo?", stream=True)
+```
+
+<Tip>
+  It is recommended to specify the `id`, `name` and the `role` fields of each team member, for better identification by the team leader when delegating requests.
+  The `id` is used to identify the team member in the team and in the team leader's context.
+</Tip>
+
+<Note>
+Team members inherit the `model` parameter from their parent `Team` if not specified. Members with an explicitly assigned `model` retain their own. In nested team structures, inheritance always happens from the direct parent.
+Teams without a defined model default to OpenAI `gpt-4o`.
+
+The `reasoning_model`, `parser_model`, and `output_model` must be explicitly defined for each team or team member.
+
+See the [model inheritance example](/basics/teams/usage/other/model-inheritance).
+</Note>
+
+## Run your Team
+
+When running your team, use the `Team.print_response()` method to print the response in the terminal.
+
+You can pass `show_members_responses=True` to also print the responses from the team members.
+
+For example:
+```python
+team.print_response("What's the latest news and weather in Tokyo?")
+```
+
+This is only for development purposes and not recommended for production use. In production, use the `Team.run()` or `Team.arun()` methods. 
+
+For example:
+
+```python
+from typing import Iterator
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.utils.pprint import pprint_run_response
+
+news_agent = Agent(name="News Agent", role="Get the latest news", tools=[DuckDuckGoTools()])
+weather_agent = Agent(name="Weather Agent", role="Get the weather for the next 7 days", tools=[DuckDuckGoTools()])
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o")
+)
+
+# Run team and return the response as a variable
+response = team.run("What is the weather in Tokyo?")
+# Print the response
+print(response.content)
+
+################ STREAM RESPONSE #################
+stream = team.run("What is the weather in Tokyo?", stream=True)
+for chunk in stream:
+    print(chunk.content, end="", flush=True)
+
+# ################ STREAM AND PRETTY PRINT #################
+stream = team.run("What is the weather in Tokyo?", stream=True)
+pprint_run_response(stream, markdown=True)
+```
+
+### Modify what is show on the terminal
+
+When using `print_response`, only the team tool calls (typically all of the delegation to members) are printed. If you want to print the responses from the members, you can use the `show_members_responses` parameter.
+```python
+...
+
+team = Team(
+    name="News and Weather Team", 
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o")
+    show_members_responses=True,
+)
+
+team.print_response("What is the weather in Tokyo?")
+```
+
+## The Passthrough-Team Pattern
+
+It is a common pattern to have a team that decides which member to delegate the request to, and then passes the request to the team member without any modification, and also applies no processing to the response before returning it to the user. I.e. this team is a "passthrough" team (or "router" team).
+
+In that case the team leader is effectively bypassed and all communication is directly with a team member. See the [Passthrough Teams](/basics/teams/delegation#passthrough-teams) section for more details.
+
+## Next Steps
+
+Next, continue building your team by adding functionality as needed. Common questions:
+
+- **How do I run my team?** -> See the [running teams](/basics/teams/running-teams) documentation.
+- **How do I add history to my team?** -> See the [chat history](/basics/chat-history/team/overview) documentation.
+- **How do I manage sessions?** -> See the [sessions](/basics/sessions/overview) documentation.
+- **How do I manage input and capture output?** -> See the [input and output](/basics/input-output/overview) documentation.
+- **How do I manage the team context?** -> See the [context engineering](/basics/context/team) documentation.
+- **How do I add knowledge?** -> See the [knowledge](/basics/knowledge/overview) documentation.
+- **How do I add guardrails?** -> See the [guardrails](/basics/guardrails/overview) documentation.
+- **How do I cache responses during development?** -> See the [response caching](/basics/models/cache-response) documentation.
+
+### FILE: ./debugging-teams.mdx ###
+
+---
+title: Debugging Teams
+sidebarTitle: Debugging Teams
+description: Learn how to debug Agno Teams.
+keywords: [teams, debugging teams]
+---
+
+Agno comes with an debug mode that takes your team development experience to the next level. It helps you understand the flow of execution and the intermediate steps. For example:
+
+1. Inspect the messages sent to the model and the response it generates.
+2. Trace intermediate steps and monitor metrics like token usage, execution time, etc.
+3. Inspect tool calls, errors, and their results.
+4. Monitor team member interactions and delegation patterns.
+
+## Debug Mode
+
+To enable debug mode on a team, use one of the following methods:
+
+1. Set the `debug_mode` parameter on your team, to enable it for all runs, as well as for member runs.
+2. Set the `debug_mode` parameter on the `run` method, to enable it on a single run.
+3. Set the `AGNO_DEBUG` environment variable to `True`, to enable debug mode for all teams.
+
+```python
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+news_agent = Agent(name="News Agent", role="Get the latest news")
+weather_agent = Agent(name="Weather Agent", role="Get the weather for the next 7 days")
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o"),
+    debug_mode=True,
+    # debug_level=2, # Uncomment to get more detailed logs
+)
+
+# Run team and print response to the terminal
+team.print_response("What is the weather in Tokyo?", show_member_responses=True)
+```
+
+<Tip>
+
+You can set `debug_level=2` to get even more detailed logs.
+
+</Tip>
+
+## Interactive CLI
+
+Agno also comes with a pre-built interactive CLI that runs your Team as a command-line application. You can use this to test back-and-forth conversations with your team.
+
+```python
+from agno.team import Team
+from agno.agent import Agent
+from agno.db.sqlite import SqliteDb
+from agno.models.openai import OpenAIChat
+
+news_agent = Agent(name="News Agent", role="Get the latest news")
+weather_agent = Agent(name="Weather Agent", role="Get the weather for the next 7 days")
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o"),
+    db=SqliteDb(db_file="tmp/data.db"),
+    add_history_to_context=True,
+    num_history_runs=3,
+)
+
+# Run team as an interactive CLI app
+team.cli_app(stream=True)
+```
+
+<Note>
+Use `await team.acli_app()` to run the team asynchronously in an interactive CLI app.
+</Note>
+
+## Developer Resources
+
+- View the [Team reference](/reference/teams/team)
+- View [Team Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/README.md)
+
+### FILE: ./delegation.mdx ###
+
+---
+title: How team delegation works
+sidebarTitle: Delegating to Team Members
+description: How tasks are delegated to team members.
+keywords: [teams, delegation, responding directly, sending input directly to members, delegating to all members]
+---
+
+A `Team` internally has a team-leader "agent" that delegates tasks and requests to team members.  When you call `run` or `arun` on a team, the team leader uses a model to determine which member to delegate the task to.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-delegate-light.png" 
+  alt="Team delegation flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-delegate-dark.png" 
+  alt="Team delegation flow"
+/>
+
+The basic flow is:
+1. The team receives user input
+2. The team leader analyzes the input and decides how to break it down into subtasks
+3. The team leader delegates specific tasks to appropriate team members.
+4. Team members complete their assigned tasks and return their results
+5. The team leader then either delegates to more team members, or synthesizes all outputs into a final, cohesive response to return to the user
+
+<Note>
+Delegating to members is done by the team leader deciding to use a **tool**, namely the `delegate_task_to_member` tool.
+
+When running the team asynchronously (using `arun`), and the team leader decides to delegate to multiple members at once, these members will run **concurrently**. Behind the scenes this is just concurrent execution of the `delegate_task_to_member` tool.
+</Note>
+
+There are various ways to control how the team delegates tasks to members:
+- **How do I return the response of members directly?** → See [Members respond directly](#members-respond-directly)
+- **How do I send my user input directly to the members without the team leader synthesizing it?** → See [Send input directly to members](#send-input-directly-to-members)
+- **How do I make sure the team leader delegates the task to all members at the same time?** → See [Delegate tasks to all members](#delegate-tasks-to-all-members-simultaneously)
+
+## Members respond directly
+
+By default, the team leader processes responses from members and synthesizes them into a single cohesive response.
+
+Set `respond_directly=True` to return member responses directly without team leader synthesis.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-direct-response-light.png" 
+  alt="Team direct response flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-direct-response-dark.png" 
+  alt="Team direct response flow"
+/>
+
+
+
+<Tip>
+Use this feature with `determine_input_for_members=False` to create a **passthrough pattern** team — the team leader is effectively bypassed and all communication is directly with a team member.
+</Tip>
+
+**Example:** Create a language router that directs questions to language-specific agents:
+
+```python
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.team.team import Team
+
+english_agent = Agent(
+    name="English Agent",
+    role="You can only answer in English",
+    model=OpenAIChat(id="gpt-5-mini"),
+    instructions=[
+        "You must only respond in English",
+    ],
+)
+
+japanese_agent = Agent(
+    name="Japanese Agent",
+    role="You can only answer in Japanese",
+    model=OpenAIChat(id="gpt-5-mini"),
+    instructions=[
+        "You must only respond in Japanese",
+    ],
+)
+multi_language_team = Team(
+    name="Multi Language Team",
+    model=OpenAIChat("gpt-4.5-preview"),
+    respond_directly=True,
+    members=[
+        english_agent,
+        japanese_agent,
+    ],
+    markdown=True,
+    instructions=[
+        "You are a language router that directs questions to the appropriate language agent.",
+        "If the user asks in a language whose agent is not a team member, respond in English with:",
+        "'I can only answer in the following languages: English and Japanese. Please ask your question in one of these languages.'",
+        "Always check the language of the user's input before routing to an agent.",
+        "For unsupported languages like Italian, respond in English with the above message.",
+    ],
+    show_members_responses=True,
+)
+
+
+# Ask "How are you?" in all supported languages
+multi_language_team.print_response(
+    "How are you?", stream=True  # English
+)
+
+multi_language_team.print_response(
+    "お元気ですか?", stream=True  # Japanese
+)
+```
+
+<Note>
+`respond_directly` is not compatible with `delegate_to_all_members`.
+</Note>
+
+<Note>
+When using `respond_directly` and the team leader decides to delegate the task to multiple members at the same time, the final content will be the results of all member responses concatenated together.
+</Note>
+
+## Send input directly to members
+
+By default, the team leader determines what "task" to give each member based on the user input.
+
+Set `determine_input_for_members=False` to send the original user input **directly** to member agents. The team leader still selects which members to delegate to, but doesn't transform the input.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-raw-input-light.png" 
+  alt="Send input directly to members flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-raw-input-dark.png" 
+  alt="Send input directly to members flow"
+/>
+
+
+
+<Tip>
+This is useful for structured inputs (like Pydantic models) that you want members to receive unchanged, or when you have specialized agents and want queries routed automatically without modification.
+</Tip>
+
+**Example:** Send structured Pydantic input directly to a specialized research agent:
+
+```python
+from typing import List
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.team.team import Team
+from agno.tools.hackernews import HackerNewsTools
+from pydantic import BaseModel, Field
+
+
+class ResearchTopic(BaseModel):
+    """Structured research topic with specific requirements."""
+
+    topic: str = Field(description="The main research topic")
+    focus_areas: List[str] = Field(description="Specific areas to focus on")
+    target_audience: str = Field(description="Who this research is for")
+    sources_required: int = Field(description="Number of sources needed", default=5)
+
+
+# Create specialized Hacker News research agent
+hackernews_agent = Agent(
+    name="Hackernews Agent",
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[HackerNewsTools()],
+    role="Extract key insights and content from Hackernews posts",
+    instructions=[
+        "Search Hacker News for relevant articles and discussions",
+        "Extract key insights and summarize findings",
+        "Focus on high-quality, well-discussed posts",
+    ],
+)
+
+# Create collaborative research team
+team = Team(
+    name="Hackernews Research Team",
+    model=OpenAIChat(id="gpt-5-mini"),
+    members=[hackernews_agent],
+    determine_input_for_members=False,  # The member gets the input directly, without the team leader synthesizing it
+    instructions=[
+        "Conduct thorough research based on the structured input",
+        "Address all focus areas mentioned in the research topic",
+        "Tailor the research to the specified target audience",
+        "Provide the requested number of sources",
+    ],
+    show_members_responses=True,
+)
+
+# Use Pydantic model as structured input
+research_request = ResearchTopic(
+    topic="AI Agent Frameworks",
+    focus_areas=["AI Agents", "Framework Design", "Developer Tools", "Open Source"],
+    target_audience="Software Developers and AI Engineers",
+    sources_required=7,
+)
+# Execute research with structured input
+team.print_response(input=research_request)
+```
+
+## Passthrough Teams
+
+It is a common pattern to have a team that decides which member to delegate the request to, and then passes the request to the team member without any modification, and also applies no processing to the response before returning it to the user. I.e. this team is a "passthrough" team (or "router" team).
+
+This means setting both `respond_directly=True` and `determine_input_for_members=False`.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-passthrough-light.png" 
+  alt="Passthrough team flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-passthrough-dark.png" 
+  alt="Passthrough team flow"
+/>
+
+
+For example:
+
+```python
+from agno.team.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+team = Team(
+    name="Question Router Team",
+    model=OpenAIChat(id="gpt-5-mini"),
+    members=[
+        Agent(name="Big Question Agent", role="You handle BIG questions"),
+        Agent(name="Small Question Agent", role="You handle SMALL questions"),
+    ],
+    respond_directly=True,  # The team leader doesn't process the response from the members and instead returns them directly
+    determine_input_for_members=False,  # The member gets the input directly, without the team leader synthesizing it
+)
+
+team.print_response(input="What is the capital of France?", stream=True)
+team.print_response(input="What is the meaning of life?", stream=True)
+```
+
+## Delegate tasks to all members simultaneously
+
+Set `delegate_to_all_members=True` to delegate the task to **all members at once**, rather than selectively choosing members.
+
+When running asynchronously (using `arun`), all members execute **concurrently** for maximum parallelism.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-delegate-to-all-members-light.png" 
+  alt="Delegate tasks to all members simultaneously flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-delegate-to-all-members-dark.png" 
+  alt="Delegate tasks to all members simultaneously flow"
+/>
+
+
+**Example:** Research team that gathers perspectives from multiple sources simultaneously:
+
+```python
+import asyncio
+from textwrap import dedent
+
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.team.team import Team
+from agno.tools.arxiv import ArxivTools
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.hackernews import HackerNewsTools
+
+reddit_researcher = Agent(
+    name="Reddit Researcher",
+    role="Research a topic on Reddit",
+    model=OpenAIChat(id="gpt-5-mini"),
+    tools=[DuckDuckGoTools()],
+    add_name_to_context=True,
+    instructions=dedent("""
+    You are a Reddit researcher.
+    You will be given a topic to research on Reddit.
+    You will need to find the most relevant posts on Reddit.
+    """),
+)
+
+hackernews_researcher = Agent(
+    name="HackerNews Researcher",
+    model=OpenAIChat("gpt-5-mini"),
+    role="Research a topic on HackerNews.",
+    tools=[HackerNewsTools()],
+    add_name_to_context=True,
+    instructions=dedent("""
+    You are a HackerNews researcher.
+    You will be given a topic to research on HackerNews.
+    You will need to find the most relevant posts on HackerNews.
+    """),
+)
+
+academic_paper_researcher = Agent(
+    name="Academic Paper Researcher",
+    model=OpenAIChat("gpt-5-mini"),
+    role="Research academic papers and scholarly content",
+    tools=[DuckDuckGoTools(), ArxivTools()],
+    add_name_to_context=True,
+    instructions=dedent("""
+    You are a academic paper researcher.
+    You will be given a topic to research in academic literature.
+    You will need to find relevant scholarly articles, papers, and academic discussions.
+    Focus on peer-reviewed content and citations from reputable sources.
+    Provide brief summaries of key findings and methodologies.
+    """),
+)
+
+twitter_researcher = Agent(
+    name="Twitter Researcher",
+    model=OpenAIChat("gpt-5-mini"),
+    role="Research trending discussions and real-time updates",
+    tools=[DuckDuckGoTools()],
+    add_name_to_context=True,
+    instructions=dedent("""
+    You are a Twitter/X researcher.
+    You will be given a topic to research on Twitter/X.
+    You will need to find trending discussions, influential voices, and real-time updates.
+    Focus on verified accounts and credible sources when possible.
+    Track relevant hashtags and ongoing conversations.
+    """),
+)
+
+
+agent_team = Team(
+    name="Discussion Team",
+    model=OpenAIChat("gpt-5-mini"),
+    members=[
+        reddit_researcher,
+        hackernews_researcher,
+        academic_paper_researcher,
+        twitter_researcher,
+    ],
+    instructions=[
+        "You are a discussion master.",
+        "You have to stop the discussion when you think the team has reached a consensus.",
+    ],
+    delegate_to_all_members=True,
+    markdown=True,
+    show_members_responses=True,
+)
+
+if __name__ == "__main__":
+    asyncio.run(
+        agent_team.aprint_response(
+            input="Start the discussion on the topic: 'What is the best way to learn to code?'",
+            stream=True,
+        )
+    )
+```
+
+## More Examples
+
+<CardGroup cols={3}>
+  <Card title="Basic Coordination" icon="link" href="/basics/teams/usage/basic-flows/basic-team">
+    Basic team coordination pattern
+  </Card>
+  <Card title="Member Responds Directly" icon="link" href="/basics/teams/usage/basic-flows/respond-directly">
+    Router pattern with direct response
+  </Card>
+  <Card title="Delegate to All Members" icon="link" href="/basics/teams/usage/basic-flows/delegate-to-all-members">
+    Delegate tasks to all members for collaboration
+  </Card>
+</CardGroup>
+
+## Developer Resources
+
+- View the [Team reference](/reference/teams/team)
+- View [Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows/README.md)
+
+### FILE: ./overview.mdx ###
+
+---
+title: Teams
+sidebarTitle: Overview
+description: Build autonomous multi-agent systems with Agno Teams.
+keywords: [teams, members, team of agents]
+---
+
+A Team is a collection of Agents (or other sub-teams) that work together to accomplish tasks.
+
+A `Team` has a list of `members` that can be instances of either `Agent` or `Team`.
+
+A team can be visualized as a tree structure, where the team leader delegates tasks to sub-teams or directly to agents. The top level of the `Team` is called the "team leader".
+
+Below is a minimal example of a language-routing team with two agents and one sub-team.
+
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-structure-light.png" 
+  alt="Team structure"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-structure-dark.png" 
+  alt="Team structure"
+/>
+
+```python
+from agno.team import Team
+from agno.agent import Agent
+
+team = Team(members=[
+    Agent(name="English Agent", role="You answer questions in English"),
+    Agent(name="Chinese Agent", role="You answer questions in Chinese"),
+    Team(
+      name="Germanic Team", 
+      role="You coordinate the team members to answer questions in German and Dutch",
+      members=[
+        Agent(name="German Agent", role="You answer questions in German"),
+        Agent(name="Dutch Agent", role="You answer questions in Dutch"),
+      ],
+    ),
+])
+```
+
+<Note>
+
+It is highly recommended to first learn more about [Agents](/basics/agents/overview) before diving into Teams.
+</Note>
+
+The team leader delegates tasks to members depending on the role of the members and the nature of the tasks.  See the [Delegation](/basics/teams/delegation) guide for more details.
+
+As with agents, teams support the following features:
+
+- **Model:** Set the model that is used by the "team leader" to delegate tasks to the team members.
+- **Instructions:** Instruct the team leader on how to solve problems. The names, descriptions and roles of team members are automatically provided to the team leader.
+- **Database:** The Team's session history and state is stored in a database. This enables your team to continue conversations from where they left off, enabling multi-turn, long-running conversations.
+- **Reasoning:** Enables the team leader to "think" before responding or delegating tasks to team members, and "analyze" the results of team members' responses.
+- **Knowledge:** If the team needs to search for information, you can add a knowledge base to the team. This is accessible to the team leader.
+- **Memory:** Gives Teams the ability to store and recall information from previous interactions, allowing them to learn user preferences and personalize their responses.
+- **Tools:** If the team leader needs to be able to use tools directly, you can add tools to the team.
+
+<Note>
+If you are migrating from Agno v1.x.x, the `mode` parameter has been deprecated. Please see the [Migration Guide](/how-to/v2-migration#teams) for more details on how to migrate your teams.
+</Note>
+
+## When should you use Teams?
+
+When should you use Teams?
+
+The general guideline is to have Agents that are narrow in scope. When you have a complex task that requires a variety of tools or a long list of steps, a Team of single-purpose agents would be a good fit.
+
+In addition, if a single agent's context limit gets easily exceeded, because of the complexity of the task, a Team would address this by keeping a single agent's context small, becaues it only addresses a part of the task.
+
+
+## Guides
+
+<CardGroup cols={3}>
+  <Card
+    title="Building Teams"
+    icon="wrench"
+    iconType="duotone"
+    href="/basics/teams/building-teams"
+  >
+    Learn how to build your teams.
+  </Card>
+  <Card
+    title="Running your Team"
+    icon="user-robot"
+    iconType="duotone"
+    href="/basics/teams/running-teams"
+  >
+    Learn how to run your teams.
+  </Card>
+  <Card
+    title="Debugging Teams"
+    icon="bug"
+    iconType="duotone"
+    href="/basics/teams/debugging-teams"
+  >
+    Learn how to debug and troubleshoot your teams.
+  </Card>
+</CardGroup>
+
+## Developer Resources
+
+- View the [`Team` schema reference](/reference/teams/team)
+- View [Use-cases](/examples/use-cases/teams/)
+- View [Usage Examples](/basics/teams/usage/)
+- View a [Teams Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/README.md)
+
+### FILE: ./running-teams.mdx ###
+
+---
+title: Running Teams
+sidebarTitle: Running Teams
+description: Learn how to run Agno Teams.
+keywords: [teams, running teams, running teams with agno, running teams with agno agents]
+---
+
+Run your Team by calling `Team.run()` or `Team.arun()`. Below is a flowchart that explains how the team runs:
+
+<Accordion title="Execution Flow Diagram">
+<img 
+  className="block dark:hidden" 
+  src="/images/teams/team-details-light.png" 
+  alt="Team execution flow"
+/>
+
+<img 
+  className="hidden dark:block" 
+  src="/images/teams/team-details-dark.png" 
+  alt="Team execution flow"
+/>
+</Accordion>
+
+1. **Pre-hooks execute** (if configured) to perform validation or setup before the run starts.
+2. **Reasoning agent runs** (if enabled) to plan and break down the task.
+3. **Context is built** including system message, user message, chat history, user memories, session state, and other inputs.
+4. **Model is invoked** with the prepared context.
+5. **Model decides** whether to respond directly, call provided tools, or delegate requests to team members.
+6. **If delegation occurs**, member agents execute their tasks concurrently (in `async` mode) and return results to the team leader. The team-leader model processes these results and may delegate further or respond.
+7. **Response is processed** and parsed into an [`output_schema`](/basics/input-output/overview#structured-output) if provided.
+8. **Post-hooks execute** (if configured) to perform final validation or transformation of the final output.
+9. **Session and metrics are stored** in the database (if configured).
+10. **TeamRunOutput is returned** to the caller with the final response.
+
+<Note>
+In the case of streaming responses, the team leader will stream responses from the model and from members to the caller. See the [Streaming](/basics/teams/running-teams#streaming) section for more details.
+</Note>
+
+## Basic Execution
+
+The `Team.run()` function runs the team and returns the output — either as a `TeamRunOutput` object or as a stream of `TeamRunOutputEvent` and `RunOutputEvent` (for member agents) objects (when `stream=True`). For example:
+
+```python
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.utils.pprint import pprint_run_response
+
+news_agent = Agent(
+    name="News Agent",
+    model=OpenAIChat(id="gpt-4o"),
+    role="Get the latest news",
+    tools=[DuckDuckGoTools()]
+)
+weather_agent = Agent(
+    name="Weather Agent",
+    model=OpenAIChat(id="gpt-4o"),
+    role="Get the weather for the next 7 days",
+    tools=[DuckDuckGoTools()]
+)
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o")
+)
+
+# Run team and return the response as a variable
+response = team.run(input="What is the weather in Tokyo?")
+# Print the response in markdown format
+pprint_run_response(response, markdown=True)
+```
+
+<Tip>
+
+You can also run the team asynchronously using `Team.arun()`. This means members will run concurrently if the team leader delegates to multiple members in one request.
+
+</Tip>
+
+<Tip>
+
+See the [Input & Output](/basics/input-output/overview) docs for more information, and to see how to use structured input and output with teams.
+
+</Tip>
+
+## Run Output
+
+The `Team.run()` function returns a `TeamRunOutput` object when not streaming. This object contains the output content, the list of messages sent to the model, the metrics of the run, the model used for the run, and an optional list of member responses.
+
+See the detailed schema in the [TeamRunOutput](/reference/teams/team-response) documentation.
+
+## Streaming
+
+To enable streaming, set `stream=True` when calling `run()`. This will return an iterator of `TeamRunOutputEvent` objects instead of a single `TeamRunOutput` object.
+
+```python
+from typing import Iterator
+from agno.team import Team
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+
+news_agent = Agent(name="News Agent", role="Get the latest news")
+weather_agent = Agent(name="Weather Agent", role="Get the weather for the next 7 days")
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o")
+)
+
+# Run team and return the response as a stream
+stream: Iterator[TeamRunOutputEvent] = team.run("What is the weather in Tokyo?", stream=True)
+for chunk in stream:
+    print(chunk.content, end="", flush=True)
+```
+
+
+### Streaming team events
+
+When you stream a response, only the `TeamRunContent` events will be streamed by default.
+
+You can also stream all run events by setting `stream_events=True`.
+
+This will provide real-time updates about the team's internal processes, like tool calling or reasoning:
+
+```python
+# Stream all events
+response_stream = team.run(
+    "What is the weather in Tokyo?",
+    stream=True,
+    stream_events=True
+)
+```
+
+### Streaming member events
+
+When streaming events with `stream_events=True`, the team leader also streams the events from team members to the caller.
+
+When your team is running asynchronously (using `arun`), the members will run concurrently if the team leader delegates to multiple members in one request.
+
+This means you will receive member events concurrently and the order of the events is not guaranteed.
+
+You can disable this by setting `stream_member_events=False`.
+
+```python
+...
+
+team = Team(
+    name="News and Weather Team",
+    members=[news_agent, weather_agent],
+    model=OpenAIChat(id="gpt-4o"),
+    stream_member_events=False
+)
+
+response_stream = team.run(
+    "What is the weather in Tokyo?",
+    stream=True,
+    stream_events=True)
+```
+
+### Handling Events
+
+You can process events as they arrive by iterating over the response stream:
+
+```python
+from agno.team import Team
+from agno.run.team import TeamRunEvent
+from agno.run.agent import RunEvent
+from agno.models.openai import OpenAIChat
+from agno.agent import Agent
+from agno.tools.duckduckgo import DuckDuckGoTools
+
+weather_agent = Agent(name="Weather Agent", role="Get the weather for the next 7 days", tools=[DuckDuckGoTools()])
+team = Team(
+    name="Test Team",
+    members=[weather_agent],
+    model=OpenAIChat(id="gpt-4o-mini")
+)
+
+response_stream = team.run("What is the weather in Tokyo?", stream=True, stream_events=True)
+
+for event in response_stream:
+    if event.event == TeamRunEvent.run_content:
+        print(event.content, end="", flush=True)
+    elif event.event == TeamRunEvent.tool_call_started:
+        print(f"Team tool call started")
+    elif event.event == TeamRunEvent.tool_call_completed:
+        print(f"Team tool call completed")
+    elif event.event == RunEvent.tool_call_started:
+        print(f"Member tool call started")
+    elif event.event == RunEvent.tool_call_completed:
+        print(f"Member tool call completed")
+    elif event.event == TeamRunEvent.run_started:
+        print(f"Run started")
+    elif event.event == TeamRunEvent.run_completed:
+        print(f"Run completed")
+```
+
+### Storing Events
+
+You can store all the events that happened during a run on the `TeamRunOutput` object.
+
+```python
+...
+
+team = Team(
+    name="Story Team",
+    members=[],
+    model=OpenAIChat(id="gpt-4o"),
+    store_events=True
+)
+```
+
+By default the `TeamRunContentEvent` and `RunContentEvent` events are not stored. You can modify which events are skipped by setting the `events_to_skip` parameter.
+
+For example:
+
+```python
+team = Team(
+    name="Story Team",
+    members=[],
+    model=OpenAIChat(id="gpt-4o"),
+    store_events=True,
+    events_to_skip=[]  # Include all events
+)
+```
+
+See the full [`TeamRunOutput` schema](/reference/teams/team-response) for more details.
+
+### Event Types
+
+The following events are streamed when `stream_events=True` by the `Team.run()` and `Team.arun()` functions depending on team's configuration:
+
+#### Core Events
+
+| Event Type                   | Description                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `TeamRunStarted`             | Indicates the start of a run                                                                                   |
+| `TeamRunContent`             | Contains the model's response text as individual chunks                                                        |
+| `TeamRunContentCompleted`    | Signals completion of content streaming                                                                        |
+| `TeamRunIntermediateContent` | Contains the model's intermediate response text as individual chunks. This is used when `output_model` is set. |
+| `TeamRunCompleted`           | Signals successful completion of the run                                                                       |
+| `TeamRunError`               | Indicates an error occurred during the run                                                                     |
+| `TeamRunCancelled`           | Signals that the run was cancelled                                                                             |
+
+#### Tool Events
+
+| Event Type              | Description                                                    |
+| ----------------------- | -------------------------------------------------------------- |
+| `TeamToolCallStarted`   | Indicates the start of a tool call                             |
+| `TeamToolCallCompleted` | Signals completion of a tool call, including tool call results |
+
+#### Reasoning Events
+
+| Event Type               | Description                                         |
+| ------------------------ | --------------------------------------------------- |
+| `TeamReasoningStarted`   | Indicates the start of the team's reasoning process |
+| `TeamReasoningStep`      | Contains a single step in the reasoning process     |
+| `TeamReasoningCompleted` | Signals completion of the reasoning process         |
+
+#### Memory Events
+
+| Event Type                  | Description                                    |
+| --------------------------- | ---------------------------------------------- |
+| `TeamMemoryUpdateStarted`   | Indicates that the team is updating its memory |
+| `TeamMemoryUpdateCompleted` | Signals completion of a memory update          |
+
+#### Session Summary Events
+
+| Event Type                     | Description                                       |
+| ------------------------------ | ------------------------------------------------- |
+| `TeamSessionSummaryStarted`    | Indicates the start of session summary generation |
+| `TeamSessionSummaryCompleted`  | Signals completion of session summary generation  |
+
+#### Pre-Hook Events
+
+| Event Type              | Description                                    |
+| ----------------------- | ---------------------------------------------- |
+| `TeamPreHookStarted`    | Indicates the start of a pre-run hook          |
+| `TeamPreHookCompleted`  | Signals completion of a pre-run hook execution |
+
+#### Post-Hook Events
+
+| Event Type               | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| `TeamPostHookStarted`    | Indicates the start of a post-run hook          |
+| `TeamPostHookCompleted`  | Signals completion of a post-run hook execution |
+
+#### Parser Model events
+
+| Event Type                         | Description                                      |
+| ---------------------------------- | ------------------------------------------------ |
+| `TeamParserModelResponseStarted`   | Indicates the start of the parser model response |
+| `TeamParserModelResponseCompleted` | Signals completion of the parser model response  |
+
+#### Output Model events
+
+| Event Type                         | Description                                      |
+| ---------------------------------- | ------------------------------------------------ |
+| `TeamOutputModelResponseStarted`   | Indicates the start of the output model response |
+| `TeamOutputModelResponseCompleted` | Signals completion of the output model response  |
+
+See detailed documentation in the [TeamRunOutput](/reference/teams/team-response) documentation.
+
+### Custom Events
+
+If you are using your own custom tools, it will often be useful to be able to yield custom events. Your custom events will be yielded together with the rest of the expected Agno events.
+
+We recommend creating your custom event class extending the built-in `CustomEvent` class:
+
+```python
+from dataclasses import dataclass
+from agno.run.team import CustomEvent
+
+@dataclass
+class CustomerProfileEvent(CustomEvent):
+    """CustomEvent for customer profile."""
+
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
+    customer_phone: Optional[str] = None
+```
+
+You can then yield your custom event from your tool. The event will be handled internally as an Agno event, and you will be able to access it in the same way you would access any other Agno event.
+
+```python
+from agno.tools import tool
+
+@tool()
+async def get_customer_profile():
+    """Example custom tool that simply yields a custom event."""
+
+    yield CustomerProfileEvent(
+        customer_name="John Doe",
+        customer_email="john.doe@example.com",
+        customer_phone="1234567890",
+    )
+```
+
+See the [full example](/examples/basics/teams/events/custom_events) for more details.
+
+## Specify Run User and Session
+
+You can specify which user and session to use when running the team by passing the `user_id` and `session_id` parameters.
+This ensures the current run is associated with the correct user and session. For example:
+
+```python
+team.run("Get me my monthly report", user_id="john@example.com", session_id="session_123")
+```
+
+For more information see the [Sessions](/basics/sessions/overview) documentation.
+
+## Passing Images / Audio / Video / Files
+
+You can pass images, audio, video, or files to the team by passing the `images`, `audio`, `video`, or `files` parameters. For example:
+
+```python
+team.run("Tell me a 5 second short story about this image", images=[Image(url="https://example.com/image.jpg")])
+```
+
+For more information see the [Multimodal](/basics/multimodal) documentation.
+
+## Passing Output Schema
+
+You can pass an output schema for a specific run by passing the `output_schema` parameter. For example:
+
+```python
+from pydantic import BaseModel
+from agno.agent import Agent
+from agno.team import Team
+from agno.models.openai import OpenAIChat
+
+class DetailedReport(BaseModel):
+    overview: str
+    findings: list[str]
+
+agent = Agent(name="Analyst", model=OpenAIChat(id="gpt-4o-mini"))
+team = Team(members=[agent], model=OpenAIChat(id="gpt-4o-mini"))
+team.run("Analyze the market", output_schema=DetailedReport)
+```
+
+For more information see the [Input & Output](/basics/input-output/overview) documentation.
+
+## Cancelling a Run
+
+A run can be cancelled by calling the `Team.cancel_run()` method.
+
+See more details in the [Cancelling a Run](/execution-control/run-cancellation/overview) documentation.
+
+## Developer Resources
+
+- View the [Team reference](/reference/teams/team)
+- View the [TeamRunOutput schema](/reference/teams/team-response)
+- View [Team Cookbook](https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/README.md)
+
+### FILE: ./usage/async-flows/basic-streaming.mdx ###
+
+---
+title: Async Team Streaming
+sidebarTitle: Simple Streaming
+description: This example demonstrates asynchronous streaming responses from a team using specialized agents with financial tools to provide real-time stock information with async streaming output.
+---
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch basic_streaming.py
+    ```
+  </Step>
+
+
+  <Step title="Add the following code to your Python file">
+
+    ```python basic_streaming.py
+    """
+    This example demonstrates asynchronous streaming responses from a team.
+
+    The team uses specialized agents with financial tools to provide real-time
+    stock information with async streaming output.
+    """
+
+    import asyncio
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+    from agno.tools.exa import ExaTools
+    from agno.utils.pprint import apprint_run_response
+
+    # Stock price and analyst data agent
+    stock_searcher = Agent(
+        name="Stock Searcher",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Searches the web for information on a stock.",
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+    )
+
+    # Company information agent
+    company_info_agent = Agent(
+        name="Company Info Searcher",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Searches the web for information on a company.",
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+    )
+
+    # Create team with async streaming capabilities
+    team = Team(
+        name="Stock Research Team",
+        model=OpenAIChat("gpt-5-mini"),
+        members=[stock_searcher, company_info_agent],
+        markdown=True,
+        show_members_responses=True,
+    )
+
+
+    async def streaming_with_arun():
+        """Demonstrate async streaming using arun() method."""
+        await apprint_run_response(
+            team.arun(input="What is the current stock price of NVDA?", stream=True)
+        )
+
+
+    async def streaming_with_aprint_response():
+        """Demonstrate async streaming using aprint_response() method."""
+        await team.aprint_response("What is the current stock price of NVDA?", stream=True)
+
+
+    if __name__ == "__main__":
+        asyncio.run(streaming_with_arun())
+
+        # asyncio.run(streaming_with_aprint_response())
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno exa_py openai
+    ```
+  </Step>
+
+  <Step title="Export your API keys">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+export EXA_API_KEY="your_exa_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+$Env:EXA_API_KEY="your_exa_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python basic_streaming.py
+    ```
+    
+    ```bash Windows
+    python basic_streaming.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/streaming" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/async-flows/basic-team.mdx ###
+
+---
+title: Async Coordinated Team
+sidebarTitle: Simple Team
+description: This example demonstrates a simple team of AI agents working together to research topics across different platforms.
+---
+
+
+The team consists of three specialized agents:
+1. **HackerNews Researcher** - Uses HackerNews API to find and analyze relevant HackerNews posts
+2. **Article Reader** - Reads articles from URLs
+
+The team leader coordinates the agents by:
+- Giving each agent a specific task
+- Providing clear instructions for each agent
+- Collecting and summarizing the results from each agent
+
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch basic_team.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python basic_team.py
+    import asyncio
+    from typing import List
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team import Team
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    from agno.tools.hackernews import HackerNewsTools
+    from agno.tools.newspaper4k import Newspaper4kTools
+    from pydantic import BaseModel, Field
+
+
+    class Article(BaseModel):
+        title: str = Field(..., description="The title of the article")
+        summary: str = Field(..., description="A summary of the article")
+        reference_links: List[str] = Field(
+            ..., description="A list of reference links to the article"
+        )
+
+
+    hn_researcher = Agent(
+        name="HackerNews Researcher",
+        model=OpenAIChat(id="gpt-5-mini"),
+        role="Gets top stories from hackernews.",
+        tools=[HackerNewsTools()],
+    )
+
+    web_searcher = Agent(
+        name="Web Searcher",
+        model=OpenAIChat(id="gpt-5-mini"),
+        role="Searches the web for information on a topic",
+        tools=[DuckDuckGoTools()],
+        add_datetime_to_context=True,
+    )
+
+    article_reader = Agent(
+        name="Article Reader",
+        role="Reads articles from URLs.",
+        tools=[Newspaper4kTools()],
+    )
+
+
+    hn_team = Team(
+        name="HackerNews Team",
+        model=OpenAIChat(id="o3"),
+        members=[hn_researcher, web_searcher, article_reader],
+        instructions=[
+            "First, search hackernews for what the user is asking about.",
+            "Then, ask the article reader to read the links for the stories to get more information.",
+            "Important: you must provide the article reader with the links to read.",
+            "Then, ask the web searcher to search for each story to get more information.",
+            "Finally, provide a thoughtful and engaging summary.",
+        ],
+        output_schema=Article,
+        add_member_tools_to_context=False,
+        markdown=True,
+        show_members_responses=True,
+    )
+
+
+    async def main():
+        """Main async function demonstrating coordinated team mode."""
+        await hn_team.aprint_response(
+            input="Write an article about the top 2 stories on hackernews"
+        )
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs newspaper4k
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python basic_team.py
+    ```
+
+    ```bash Windows
+    python basic_team.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/async_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/async-flows/delegate-to-all-members.mdx ###
+
+---
+title: Async Cooperative Team
+sidebarTitle: Delegate to All Members
+description: This example demonstrates a collaborative team of AI agents working together asynchronously to research topics across different platforms.
+---
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch delegate_to_all_members.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python delegate_to_all_members.py
+    """
+    This example demonstrates a collaborative team of AI agents working together to research topics across different platforms.
+
+    The team consists of two specialized agents:
+    1. Reddit Researcher - Uses DuckDuckGo to find and analyze relevant Reddit posts
+    2. HackerNews Researcher - Uses HackerNews API to find and analyze relevant HackerNews posts
+
+    The agents work in "collaborate" mode, meaning they:
+    - Both are given the same task at the same time
+    - Work towards reaching consensus through discussion
+    - Are coordinated by a team leader that guides the discussion
+
+    The team leader moderates the discussion and determines when consensus is reached.
+
+    This setup is useful for:
+    - Getting diverse perspectives from different online communities
+    - Cross-referencing information across platforms
+    - Having agents collaborate to form more comprehensive analysis
+    - Reaching balanced conclusions through structured discussion
+
+    """
+
+    import asyncio
+    from textwrap import dedent
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    from agno.tools.hackernews import HackerNewsTools
+
+    reddit_researcher = Agent(
+        name="Reddit Researcher",
+        role="Research a topic on Reddit",
+        model=OpenAIChat(id="gpt-5-mini"),
+        tools=[DuckDuckGoTools()],
+        add_name_to_context=True,
+        instructions=dedent("""
+        You are a Reddit researcher.
+        You will be given a topic to research on Reddit.
+        You will need to find the most relevant posts on Reddit.
+        """),
+    )
+
+    hackernews_researcher = Agent(
+        name="HackerNews Researcher",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Research a topic on HackerNews.",
+        tools=[HackerNewsTools()],
+        add_name_to_context=True,
+        instructions=dedent("""
+        You are a HackerNews researcher.
+        You will be given a topic to research on HackerNews.
+        You will need to find the most relevant posts on HackerNews.
+        """),
+    )
+
+
+    agent_team = Team(
+        name="Discussion Team",
+        model=OpenAIChat("gpt-5-mini"),
+        members=[
+            reddit_researcher,
+            hackernews_researcher,
+        ],
+        instructions=[
+            "You are a discussion master.",
+            "You have to stop the discussion when you think the team has reached a consensus.",
+        ],
+        delegate_to_all_members=True,
+        markdown=True,
+        show_members_responses=True,
+    )
+
+
+    async def main():
+        """Main async function demonstrating collaborative team mode."""
+        await agent_team.aprint_response(
+            input="Start the discussion on the topic: 'What is the best way to learn to code?'",
+            stream=True,
+        )
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python delegate_to_all_members.py
+    ```
+    
+    ```bash Windows
+    python delegate_to_all_members.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/async_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/async-flows/respond-directly.mdx ###
+
+---
+title: Async Router Team with Direct Response
+sidebarTitle: Member Responds Directly
+description: This example demonstrates an asynchronous route team of AI agents working together to answer questions in different languages. The team consists of six specialized language agents (English, Japanese, Chinese, Spanish, French, and German) with a team leader that routes user questions to the appropriate language agent based on the input language.
+---
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch respond_directly.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python respond_directly.py
+    """
+    This example demonstrates a route team of AI agents working together to answer questions in different languages.
+
+    The team consists of six specialized agents:
+    1. English Agent - Can only answer in English
+    2. Japanese Agent - Can only answer in Japanese
+    3. Chinese Agent - Can only answer in Chinese
+    4. Spanish Agent - Can only answer in Spanish
+    5. French Agent - Can only answer in French
+    6. German Agent - Can only answer in German
+
+    The team leader routes the user's question to the appropriate language agent. It can only forward the question and cannot answer itself.
+    """
+
+    import asyncio
+
+    from agno.agent import Agent
+    from agno.models.anthropic import Claude
+    from agno.models.deepseek import DeepSeek
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+
+    english_agent = Agent(
+        name="English Agent",
+        role="You only answer in English",
+        model=OpenAIChat(id="gpt-5-mini"),
+    )
+    japanese_agent = Agent(
+        name="Japanese Agent",
+        role="You only answer in Japanese",
+        model=DeepSeek(id="deepseek-chat"),
+    )
+    chinese_agent = Agent(
+        name="Chinese Agent",
+        role="You only answer in Chinese",
+        model=DeepSeek(id="deepseek-chat"),
+    )
+    spanish_agent = Agent(
+        name="Spanish Agent",
+        role="You can only answer in Spanish",
+        model=OpenAIChat(id="gpt-5-mini"),
+    )
+    french_agent = Agent(
+        name="French Agent",
+        role="You can only answer in French",
+        model=OpenAIChat(id="gpt-5-mini"),
+    )
+    german_agent = Agent(
+        name="German Agent",
+        role="You can only answer in German",
+        model=Claude("claude-3-5-sonnet-20241022"),
+    )
+
+    multi_language_team = Team(
+        name="Multi Language Team",
+        model=OpenAIChat("gpt-5-mini"),
+        members=[
+            english_agent,
+            spanish_agent,
+            japanese_agent,
+            french_agent,
+            german_agent,
+            chinese_agent,
+        ],
+        markdown=True,
+        respond_directly=True,
+        instructions=[
+            "You are a language router that directs questions to the appropriate language agent.",
+            "If the user asks in a language whose agent is not a team member, respond in English with:",
+            "'I can only answer in the following languages: English, Spanish, Japanese, French and German. Please ask your question in one of these languages.'",
+            "Always check the language of the user's input before routing to an agent.",
+            "For unsupported languages like Italian, respond in English with the above message.",
+        ],
+        show_members_responses=True,
+    )
+
+
+    async def main():
+        """Main async function demonstrating team routing mode."""
+        # Ask "How are you?" in all supported languages
+        # await multi_language_team.aprint_response(
+        #     "How are you?", stream=True  # English
+        # )
+
+        # await multi_language_team.aprint_response(
+        #     "你好吗？", stream=True  # Chinese
+        # )
+
+        # await multi_language_team.aprint_response(
+        #     "お元気ですか?", stream=True  # Japanese
+        # )
+
+        await multi_language_team.aprint_response(input="Comment allez-vous?")
+
+        # await multi_language_team.aprint_response(
+        #     "Wie geht es Ihnen?", stream=True  # German
+        # )
+
+        # await multi_language_team.aprint_response(
+        #     "Come stai?", stream=True  # Italian
+        # )
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python respond_directly.py
+    ```
+    
+    ```bash Windows
+    python respond_directly.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/async_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/async-flows/stream-events.mdx ###
+
+---
+title: Async Team Events Monitoring
+sidebarTitle: Event Streaming
+description: This example demonstrates how to handle and monitor team events asynchronously, capturing various events during async team execution including tool calls, run states, and content generation.
+---
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch stream_events.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python stream_events.py
+    """
+    This example demonstrates how to handle and monitor team events asynchronously.
+
+    Shows how to capture and respond to various events during async team execution,
+    including tool calls, run states, and content generation events.
+    """
+
+    import asyncio
+    from uuid import uuid4
+
+    from agno.agent import RunEvent
+    from agno.agent.agent import Agent
+    from agno.models.anthropic.claude import Claude
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team, TeamRunEvent
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    from agno.tools.hackernews import HackerNewsTools
+
+    # Hacker News search agent
+    hacker_news_agent = Agent(
+        id="hacker-news-agent",
+        name="Hacker News Agent",
+        role="Search Hacker News for information",
+        tools=[HackerNewsTools()],
+        instructions=[
+            "Find articles about the company in the Hacker News",
+        ],
+    )
+
+    # Web search agent
+    website_agent = Agent(
+        id="website-agent",
+        name="Website Agent",
+        role="Search the website for information",
+        model=OpenAIChat(id="gpt-5-mini"),
+        tools=[DuckDuckGoTools()],
+        instructions=[
+            "Search the website for information",
+        ],
+    )
+
+    # Generate unique IDs
+    user_id = str(uuid4())
+    id = str(uuid4())
+
+    # Create team with event monitoring
+    company_info_team = Team(
+        name="Company Info Team",
+        id=id,
+        model=Claude(id="claude-3-7-sonnet-latest"),
+        members=[
+            hacker_news_agent,
+            website_agent,
+        ],
+        markdown=True,
+        instructions=[
+            "You are a team that finds information about a company.",
+            "First search the web and Hacker News for information about the company.",
+            "If you can find the company's website URL, then scrape the homepage and the about page.",
+        ],
+        show_members_responses=True,
+    )
+
+
+    async def run_team_with_events(prompt: str):
+        """
+        Run the team and capture all events for monitoring and debugging.
+
+        This function demonstrates how to handle different types of events:
+        - Team-level events (run start/completion, tool calls)
+        - Member-level events (agent tool calls)
+        - Content generation events
+        """
+        content_started = False
+
+        async for run_response_event in company_info_team.arun(
+            prompt,
+            stream=True,
+            stream_events=True,
+        ):
+            # Handle team-level events
+            if run_response_event.event in [
+                TeamRunEvent.run_started,
+                TeamRunEvent.run_completed,
+            ]:
+                print(f"\n🎯 TEAM EVENT: {run_response_event.event}")
+
+            # Handle team tool call events
+            if run_response_event.event in [TeamRunEvent.tool_call_started]:
+                print(f"\n🔧 TEAM TOOL STARTED: {run_response_event.tool.tool_name}")
+                print(f"   Args: {run_response_event.tool.tool_args}")
+
+            if run_response_event.event in [TeamRunEvent.tool_call_completed]:
+                print(f"\n✅ TEAM TOOL COMPLETED: {run_response_event.tool.tool_name}")
+                print(f"   Result: {run_response_event.tool.result}")
+
+            # Handle member-level events
+            if run_response_event.event in [RunEvent.tool_call_started]:
+                print(f"\n🤖 MEMBER TOOL STARTED: {run_response_event.agent_id}")
+                print(f"   Tool: {run_response_event.tool.tool_name}")
+                print(f"   Args: {run_response_event.tool.tool_args}")
+
+            if run_response_event.event in [RunEvent.tool_call_completed]:
+                print(f"\n✅ MEMBER TOOL COMPLETED: {run_response_event.agent_id}")
+                print(f"   Tool: {run_response_event.tool.tool_name}")
+                print(
+                    f"   Result: {run_response_event.tool.result[:100]}..."
+                )  # Truncate for readability
+
+            # Handle content generation
+            if run_response_event.event in [TeamRunEvent.run_content]:
+                if not content_started:
+                    print("\n📝 CONTENT:")
+                    content_started = True
+                else:
+                    print(run_response_event.content, end="")
+
+
+    if __name__ == "__main__":
+        asyncio.run(
+            run_team_with_events(
+                "Write me a full report on everything you can find about Agno, the company building AI agent infrastructure.",
+            )
+        )
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs anthropic
+    ```
+  </Step>
+
+  <Step title="Export your API keys">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+$Env:ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python stream_events.py
+    ```
+    
+    ```bash Windows
+    python stream_events.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/streaming" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/basic-streaming.mdx ###
+
+---
+title: Team Streaming Responses
+sidebarTitle: Simple Streaming
+description: This example demonstrates streaming responses from a team using specialized agents with financial tools to provide real-time stock information with streaming output.
+---
+
+
+<Steps>
+
+<Step title="Create a Python file">
+    ```bash
+    touch basic_streaming.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python basic_streaming.py
+    from typing import Iterator  # noqa
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team import Team
+    from agno.tools.exa import ExaTools
+
+    # Stock price and analyst data agent
+    stock_searcher = Agent(
+        name="Stock Searcher",
+        model=OpenAIChat(id="gpt-5-mini"),
+        role="Searches the web for information on a stock.",
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+    )
+
+    # Company information agent
+    company_info_agent = Agent(
+        name="Company Info Searcher",
+        model=OpenAIChat(id="gpt-5-mini"),
+        role="Searches the web for information on a stock.",
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+    )
+
+    # Create team with streaming capabilities
+    team = Team(
+        name="Stock Research Team",
+        model=OpenAIChat(id="gpt-5-mini"),
+        members=[stock_searcher, company_info_agent],
+        markdown=True,
+        show_members_responses=True,
+    )
+
+    # Test streaming response
+    team.print_response(
+        "What is the current stock price of NVDA?",
+        stream=True,
+    )
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno exa_py openai
+    ```
+  </Step>
+
+  <Step title="Export your API keys">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+export EXA_API_KEY="your_exa_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+$Env:EXA_API_KEY="your_exa_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python basic_streaming.py
+    ```
+
+    ```bash Windows
+    python basic_streaming.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/streaming" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/basic-team.mdx ###
+
+---
+title: Basic Team
+sidebarTitle: Simple Team
+description: This example demonstrates a simple team of AI agents working together to research topics across different platforms.
+---
+
+The team consists of three specialized agents:
+1. **HackerNews Researcher** - Uses HackerNews API to find and analyze relevant HackerNews posts
+2. **Article Reader** - Reads articles from URLs
+
+The team leader coordinates the agents by:
+- Giving each agent a specific task
+- Providing clear instructions for each agent
+- Collecting and summarizing the results from each agent
+
+
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch basic_team.py
+    ```
+  </Step>
+
+
+  <Step title="Add the following code to your Python file">
+
+    ```python basic_team.py
+    from typing import List
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+    from agno.tools.hackernews import HackerNewsTools
+    from agno.tools.newspaper4k import Newspaper4kTools
+    from pydantic import BaseModel, Field
+
+
+    class Article(BaseModel):
+        title: str = Field(..., description="The title of the article")
+        summary: str = Field(..., description="A summary of the article")
+        reference_links: List[str] = Field(
+            ..., description="A list of reference links to the article"
+        )
+
+
+    hn_researcher = Agent(
+        name="HackerNews Researcher",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Gets top stories from hackernews.",
+        tools=[HackerNewsTools()],
+    )
+
+    article_reader = Agent(
+        name="Article Reader",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Reads articles from URLs.",
+        tools=[Newspaper4kTools()],
+    )
+
+
+    hn_team = Team(
+        name="HackerNews Team",
+        model=OpenAIChat("gpt-5-mini"),
+        members=[hn_researcher, article_reader],
+        instructions=[
+            "First, search hackernews for what the user is asking about.",
+            "Then, ask the article reader to read the links for the stories to get more information.",
+            "Important: you must provide the article reader with the links to read.",
+            "Then, ask the web searcher to search for each story to get more information.",
+            "Finally, provide a thoughtful and engaging summary.",
+        ],
+        output_schema=Article,
+        add_member_tools_to_context=False,
+        markdown=True,
+        show_members_responses=True,
+    )
+
+
+    hn_team.print_response(
+        input="Write an article about the top 2 stories on hackernews", stream=True
+    )
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai newspaper4k
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python basic_team.py
+    ```
+    
+    ```bash Windows
+    python basic_team.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/delegate-to-all-members.mdx ###
+
+---
+title: Delegate to All Members (Cooperation)
+sidebarTitle: Delegate to All Members
+description: This example demonstrates a collaborative team of AI agents working together to research topics across different platforms.
+---
+
+The team consists of two specialized agents:
+1. **Reddit Researcher** - Uses DuckDuckGo to find and analyze relevant Reddit posts
+2. **HackerNews Researcher** - Uses HackerNews API to find and analyze relevant HackerNews posts
+
+The agents work in a collaborative mode by using `delegate_to_all_members=True`, meaning they:
+- Both are given the same task at the same time
+- Work towards reaching consensus through discussion
+- Are coordinated by a team leader that guides the discussion
+
+The team leader moderates the discussion and determines when consensus is reached.
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch delegate_to_all_members.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python delegate_to_all_members.py
+    import asyncio
+    from textwrap import dedent
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    from agno.tools.hackernews import HackerNewsTools
+
+    reddit_researcher = Agent(
+        name="Reddit Researcher",
+        role="Research a topic on Reddit",
+        model=OpenAIChat(id="o3-mini"),
+        tools=[DuckDuckGoTools()],
+        add_name_to_context=True,
+        instructions=dedent("""
+        You are a Reddit researcher.
+        You will be given a topic to research on Reddit.
+        You will need to find the most relevant posts on Reddit.
+        """),
+    )
+
+    hackernews_researcher = Agent(
+        name="HackerNews Researcher",
+        model=OpenAIChat("o3-mini"),
+        role="Research a topic on HackerNews.",
+        tools=[HackerNewsTools()],
+        add_name_to_context=True,
+        instructions=dedent("""
+        You are a HackerNews researcher.
+        You will be given a topic to research on HackerNews.
+        You will need to find the most relevant posts on HackerNews.
+        """),
+    )
+
+
+    agent_team = Team(
+        name="Discussion Team",
+        model=OpenAIChat("o3-mini"),
+        members=[
+            reddit_researcher,
+            hackernews_researcher,
+        ],
+        instructions=[
+            "You are a discussion master.",
+            "You have to stop the discussion when you think the team has reached a consensus.",
+        ],
+        markdown=True,
+        delegate_to_all_members=True,
+        show_members_responses=True,
+    )
+
+
+    async def main():
+        await agent_team.aprint_response(
+            input="Start the discussion on the topic: 'What is the best way to learn to code?'",
+            stream=True,
+            stream_intermediate_steps=True,
+        )
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python delegate_to_all_members.py
+    ```
+    
+    ```bash Windows
+    python delegate_to_all_members.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/respond-directly.mdx ###
+
+---
+title: Router Team with Direct Response
+sidebarTitle: Member Responds Directly
+description: This example demonstrates a team of AI agents working together to answer questions in different languages.
+---
+
+The team consists of six specialized agents:
+1. **English Agent** - Can only answer in English
+2. **Japanese Agent** - Can only answer in Japanese
+3. **Chinese Agent** - Can only answer in Chinese
+4. **Spanish Agent** - Can only answer in Spanish
+5. **French Agent** - Can only answer in French
+6. **German Agent** - Can only answer in German
+
+The team leader routes the user's question to the appropriate language agent. With `respond_directly=True`, the selected agent responds directly without the team leader processing the response.
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch respond_directly.py
+    ```
+  </Step>
+
+
+  <Step title="Add the following code to your Python file">
+
+    ```python respond_directly.py
+    import asyncio
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+
+    english_agent = Agent(
+        name="English Agent",
+        role="You only answer in English",
+        model=OpenAIChat(id="o3-mini"),
+    )
+    japanese_agent = Agent(
+        name="Japanese Agent",
+        role="You only answer in Japanese",
+        model=OpenAIChat(id="o3-mini"),
+    )
+    chinese_agent = Agent(
+        name="Chinese Agent",
+        role="You only answer in Chinese",
+        model=OpenAIChat(id="o3-mini"),
+    )
+    spanish_agent = Agent(
+        name="Spanish Agent",
+        role="You can only answer in Spanish",
+        model=OpenAIChat(id="o3-mini"),
+    )
+    french_agent = Agent(
+        name="French Agent",
+        role="You can only answer in French",
+        model=OpenAIChat(id="o3-mini"),
+    )
+    german_agent = Agent(
+        name="German Agent",
+        role="You can only answer in German",
+        model=OpenAIChat(id="o3-mini"),
+    )
+
+    multi_language_team = Team(
+        name="Multi Language Team",
+        model=OpenAIChat("o3-mini"),
+        respond_directly=True,
+        members=[
+            english_agent,
+            spanish_agent,
+            japanese_agent,
+            french_agent,
+            german_agent,
+            chinese_agent,
+        ],
+        markdown=True,
+        instructions=[
+            "You are a language router that directs questions to the appropriate language agent.",
+            "If the user asks in a language whose agent is not a team member, respond in English with:",
+            "'I can only answer in the following languages: English, Spanish, Japanese, French and German. Please ask your question in one of these languages.'",
+            "Always check the language of the user's input before routing to an agent.",
+            "For unsupported languages like Italian, respond in English with the above message.",
+        ],
+        show_members_responses=True,
+    )
+
+
+    async def main():
+        """Main async function demonstrating team routing mode."""
+        # Ask "How are you?" in all supported languages
+        await multi_language_team.aprint_response(
+            "How are you?",
+            stream=True,  # English
+        )
+
+        await multi_language_team.aprint_response(
+            "你好吗？",
+            stream=True,  # Chinese
+        )
+
+        await multi_language_team.aprint_response(
+            "お元気ですか?",
+            stream=True,  # Japanese
+        )
+
+        await multi_language_team.aprint_response("Comment allez-vous?", stream=True)
+
+        await multi_language_team.aprint_response(
+            "Wie geht es Ihnen?",
+            stream=True,  # German
+        )
+
+        await multi_language_team.aprint_response(
+            "Come stai?",
+            stream=True,  # Italian
+        )
+
+
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python respond_directly.py
+    ```
+
+    ```bash Windows
+    python respond_directly.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/response-as-variable.mdx ###
+
+---
+title: "Capturing Team Responses as Variables"
+sidebarTitle: Response as Variable
+description: This example demonstrates how to capture team responses as variables and validate them using Pydantic models.
+---
+
+It shows a routing team that analyzes stocks and company news, with structured responses for different types of queries.
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch response_as_variable.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python response_as_variable.py
+    """
+    This example demonstrates how to capture team responses as variables.
+
+    Shows how to get structured responses from teams and validate them using
+    Pydantic models for different types of queries.
+    """
+
+    from typing import Iterator  # noqa
+    from pydantic import BaseModel
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+    from agno.utils.pprint import pprint_run_response
+    from agno.tools.exa import ExaTools
+
+    class StockAnalysis(BaseModel):
+        """Stock analysis data structure."""
+
+        symbol: str
+        company_name: str
+        analysis: str
+
+
+    class CompanyAnalysis(BaseModel):
+        """Company analysis data structure."""
+
+        company_name: str
+        analysis: str
+
+
+    # Stock price analysis agent
+    stock_searcher = Agent(
+        name="Stock Searcher",
+        model=OpenAIChat("gpt-5-mini"),
+        output_schema=StockAnalysis,
+        role="Searches for stock price and analyst information",
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+        instructions=[
+            "Provide detailed stock analysis with price information",
+            "Include analyst recommendations when available",
+        ],
+    )
+
+    # Company news and information agent
+    company_info_agent = Agent(
+        name="Company Info Searcher",
+        model=OpenAIChat("gpt-5-mini"),
+        role="Searches for company news and information",
+        output_schema=CompanyAnalysis,
+        tools=[
+            ExaTools(
+                include_domains=["cnbc.com", "reuters.com", "bloomberg.com", "wsj.com"],
+                text=False,
+                show_results=True,
+                highlights=False,
+            )
+        ],
+        instructions=[
+            "Focus on company news and business information",
+            "Provide comprehensive analysis of company developments",
+        ],
+    )
+
+    # Create routing team
+    team = Team(
+        name="Stock Research Team",
+        model=OpenAIChat("gpt-5-mini"),
+        members=[stock_searcher, company_info_agent],
+        respond_directly=True,
+        markdown=True,
+        show_members_responses=True,
+        instructions=[
+            "Route stock price questions to the Stock Searcher",
+            "Route company news and info questions to the Company Info Searcher",
+        ],
+    )
+
+    # Example 1: Get stock price analysis as a variable
+    print("=" * 50)
+    print("STOCK PRICE ANALYSIS")
+    print("=" * 50)
+
+    stock_response = team.run("What is the current stock price of NVDA?")
+    assert isinstance(stock_response.content, StockAnalysis)
+    print(f"Response type: {type(stock_response.content)}")
+    print(f"Symbol: {stock_response.content.symbol}")
+    print(f"Company: {stock_response.content.company_name}")
+    print(f"Analysis: {stock_response.content.analysis}")
+    pprint_run_response(stock_response)
+
+    # Example 2: Get company news analysis as a variable
+    print("\n" + "=" * 50)
+    print("COMPANY NEWS ANALYSIS")
+    print("=" * 50)
+
+    news_response = team.run("What is in the news about NVDA?")
+    assert isinstance(news_response.content, CompanyAnalysis)
+    print(f"Response type: {type(news_response.content)}")
+    print(f"Company: {news_response.content.company_name}")
+    print(f"Analysis: {news_response.content.analysis}")
+    pprint_run_response(news_response)
+
+    # Example 3: Process multiple responses
+    print("\n" + "=" * 50)
+    print("BATCH PROCESSING")
+    print("=" * 50)
+
+    companies = ["AAPL", "GOOGL", "MSFT"]
+    responses = []
+
+    for company in companies:
+        response = team.run(f"Analyze {company} stock")
+        responses.append(response)
+        print(f"Processed {company}: {type(response.content).__name__}")
+
+    print(f"Total responses processed: {len(responses)}")
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai exa_py
+    ```
+  </Step>
+
+  <Step title="Export your API keys">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+export EXA_API_KEY="your_exa_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+$Env:EXA_API_KEY="your_exa_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python response_as_variable.py
+    ```
+    
+    ```bash Windows
+    python response_as_variable.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/basic-flows/stream-events.mdx ###
+
+---
+title: Team Events Monitoring
+sidebarTitle: Event Streaming
+description: This example demonstrates how to monitor and handle different types of events during team execution, including tool calls, run states, and content generation events.
+---
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch stream_events.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python stream_events.py
+    import asyncio
+    from uuid import uuid4
+
+    from agno.agent import RunEvent
+    from agno.agent.agent import Agent
+    from agno.models.anthropic.claude import Claude
+
+    from agno.models.openai import OpenAIChat
+    from agno.team import Team, TeamRunEvent
+    from agno.tools.duckduckgo import DuckDuckGoTools
+    from agno.tools.hackernews import HackerNewsTools
+
+    wikipedia_agent = Agent(
+        id="hacker-news-agent",
+        name="Hacker News Agent",
+        role="Search Hacker News for information",
+        tools=[HackerNewsTools()],
+        instructions=[
+            "Find articles about the company in the Hacker News",
+        ],
+    )
+
+    website_agent = Agent(
+        id="website-agent",
+        name="Website Agent",
+        role="Search the website for information",
+        model=OpenAIChat(id="gpt-5-mini"),
+        tools=[DuckDuckGoTools()],
+        instructions=[
+            "Search the website for information",
+        ],
+    )
+
+    user_id = str(uuid4())
+    id = str(uuid4())
+
+    company_info_team = Team(
+        name="Company Info Team",
+        id=id,
+        user_id=user_id,
+        model=Claude(id="claude-3-7-sonnet-latest"),
+        members=[
+            wikipedia_agent,
+            website_agent,
+        ],
+        markdown=True,
+        instructions=[
+            "You are a team that finds information about a company.",
+            "First search the web and wikipedia for information about the company.",
+            "If you can find the company's website URL, then scrape the homepage and the about page.",
+        ],
+        show_members_responses=True,
+    )
+
+
+    async def run_team_with_events(prompt: str):
+        content_started = False
+        async for run_output_event in company_info_team.arun(
+            prompt,
+            stream=True,
+            stream_events=True,
+        ):
+            if run_output_event.event in [
+                TeamRunEvent.run_started,
+                TeamRunEvent.run_completed,
+            ]:
+                print(f"\nTEAM EVENT: {run_output_event.event}")
+
+            if run_output_event.event in [TeamRunEvent.tool_call_started]:
+                print(f"\nTEAM EVENT: {run_output_event.event}")
+                print(f"TOOL CALL: {run_output_event.tool.tool_name}")
+                print(f"TOOL CALL ARGS: {run_output_event.tool.tool_args}")
+
+            if run_output_event.event in [TeamRunEvent.tool_call_completed]:
+                print(f"\nTEAM EVENT: {run_output_event.event}")
+                print(f"TOOL CALL: {run_output_event.tool.tool_name}")
+                print(f"TOOL CALL RESULT: {run_output_event.tool.result}")
+
+            # Member events
+            if run_output_event.event in [RunEvent.tool_call_started]:
+                print(f"\nMEMBER EVENT: {run_output_event.event}")
+                print(f"AGENT ID: {run_output_event.agent_id}")
+                print(f"TOOL CALL: {run_output_event.tool.tool_name}")
+                print(f"TOOL CALL ARGS: {run_output_event.tool.tool_args}")
+
+            if run_output_event.event in [RunEvent.tool_call_completed]:
+                print(f"\nMEMBER EVENT: {run_output_event.event}")
+                print(f"AGENT ID: {run_output_event.agent_id}")
+                print(f"TOOL CALL: {run_output_event.tool.tool_name}")
+                print(f"TOOL CALL RESULT: {run_output_event.tool.result}")
+
+            if run_output_event.event in [TeamRunEvent.run_content]:
+                if not content_started:
+                    print("CONTENT")
+                    content_started = True
+                else:
+                    print(run_output_event.content, end="")
+
+
+    if __name__ == "__main__":
+        asyncio.run(
+            run_team_with_events(
+                "Write me a full report on everything you can find about Agno, the company building AI agent infrastructure.",
+            )
+        )
+    ```
+
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno anthropic openai ddgs
+    ```
+  </Step>
+
+  <Step title="Export your API keys">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+export ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+$Env:ANTHROPIC_API_KEY="your_anthropic_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python stream_events.py
+    ```
+    
+    ```bash Windows
+    python stream_events.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/streaming" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/other/model-inheritance.mdx ###
+
+---
+title: Model Inheritance
+sidebarTitle: Members Inherit Model
+description: This example demonstrates how agents automatically inherit the model from their parent team.
+---
+
+**When the Team has a model:**
+- Agents without a model use the Team's `model`
+- Agents with their own model keep their own model
+- In nested teams, agents use the `model` from their direct parent team
+- The `reasoning_model`, `parser_model`, and `output_model` must be set explicitly on each team member or team
+
+**When the Team has no model:**
+- The Team and all agents default to OpenAI `gpt-4o`
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch model_inheritance.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python model_inheritance.py
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team.team import Team
+
+    # These agents don't have models set
+    researcher = Agent(
+        name="Researcher",
+        role="Research and gather information",
+        instructions=["Be thorough and detailed"],
+    )
+
+    writer = Agent(
+        name="Writer",
+        role="Write content based on research",
+        instructions=["Write clearly and concisely"],
+    )
+
+    # This agent has a model set
+    editor = Agent(
+        name="Editor",
+        role="Edit and refine content",
+        model=OpenAIChat(id="gpt-4o-mini"),
+        instructions=["Ensure clarity and correctness"],
+    )
+
+    # Nested team setup
+    analyst = Agent(
+        name="Analyst",
+        role="Analyze data and provide insights",
+    )
+
+    sub_team = Team(
+        name="Analysis Team",
+        model=OpenAIChat(id="gpt-5-mini"),
+        members=[analyst],
+    )
+
+    team = Team(
+        name="Content Production Team",
+        model=OpenAIChat(id="gpt-4o"),
+        members=[researcher, writer, editor, sub_team],
+        instructions=[
+            "Research the topic thoroughly",
+            "Write clear and engaging content",
+            "Edit for quality and clarity",
+            "Coordinate the entire process",
+        ],
+        show_members_responses=True,
+    )
+
+    team.initialize_team()
+
+    # researcher and writer inherit gpt-4o from team
+    print(f"Researcher model: {researcher.model.id}")
+    print(f"Writer model: {writer.model.id}")
+
+    # editor keeps its explicit model
+    print(f"Editor model: {editor.model.id}")
+
+    # analyst inherits gpt-5-mini from its sub-team
+    print(f"Analyst model: {analyst.model.id}")
+
+    team.print_response(
+        "Write a brief article about AI", stream=True
+    )
+    ```
+
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python model_inheritance.py
+    ```
+    
+    ```bash Windows
+    python model_inheritance.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/basic_flows" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/other/run-as-cli.mdx ###
+
+---
+title: "Interactive CLI Writing Team"
+sidebarTitle: Interactive CLI
+description: This example demonstrates how to create an interactive CLI application with a collaborative writing team.
+---
+
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch run_as_cli.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python run_as_cli.py
+    """✍️ Interactive Writing Team - CLI App Example
+
+    This example shows how to create an interactive CLI app with a collaborative writing team.
+
+    Run `pip install openai agno ddgs` to install dependencies.
+    """
+
+    from textwrap import dedent
+
+    from agno.agent import Agent
+    from agno.models.openai import OpenAIChat
+    from agno.team import Team
+    from agno.tools.duckduckgo import DuckDuckGoTools
+
+    research_agent = Agent(
+        name="Research Specialist",
+        role="Information Research and Fact Verification",
+        model=OpenAIChat(id="gpt-5-mini"),
+        tools=[DuckDuckGoTools()],
+        instructions=dedent("""\
+            You are an expert research specialist! 
+            
+            Your expertise:
+            - **Deep Research**: Find comprehensive, current information on any topic
+            - **Fact Verification**: Cross-reference claims and verify accuracy
+            - **Source Analysis**: Evaluate credibility and relevance of sources
+            - **Data Synthesis**: Organize research into clear, usable insights
+            
+            Always provide:
+            - Multiple reliable sources
+            - Key statistics and recent developments
+            - Different perspectives on topics
+            - Credible citations and links
+            """),
+    )
+
+    brainstorm_agent = Agent(
+        name="Creative Brainstormer",
+        role="Idea Generation and Creative Concepts",
+        model=OpenAIChat(id="gpt-5-mini"),
+        instructions=dedent("""\
+            You are a creative brainstorming expert! 
+            
+            Your specialty:
+            - **Idea Generation**: Create unique, engaging content concepts
+            - **Creative Angles**: Find fresh perspectives on familiar topics
+            - **Content Formats**: Suggest various ways to present information
+            - **Audience Targeting**: Tailor ideas to specific audiences
+            
+            Generate:
+            - Multiple creative approaches
+            - Compelling headlines and hooks
+            - Engaging story structures
+            - Interactive content ideas
+            """),
+    )
+
+    writer_agent = Agent(
+        name="Content Writer",
+        role="Content Creation and Storytelling",
+        model=OpenAIChat(id="gpt-5-mini"),
+        instructions=dedent("""\
+            You are a skilled content writer! 
+            
+            Your craft includes:
+            - **Structured Writing**: Create clear, logical content flow
+            - **Engaging Style**: Write compelling, readable content
+            - **Audience Awareness**: Adapt tone and style for target readers
+            - **SEO Knowledge**: Optimize for search and engagement
+            
+            Create:
+            - Well-structured articles and posts
+            - Compelling introductions and conclusions
+            - Smooth transitions between ideas
+            - Action-oriented content
+            """),
+    )
+
+    editor_agent = Agent(
+        name="Editor",
+        role="Content Editing and Quality Assurance",
+        model=OpenAIChat(id="gpt-5-mini"),
+        instructions=dedent("""\
+            You are a meticulous editor! 
+            
+            Your expertise:
+            - **Grammar & Style**: Perfect language mechanics and flow
+            - **Clarity**: Ensure ideas are clear and well-expressed
+            - **Consistency**: Maintain consistent tone and formatting
+            - **Quality Assurance**: Final review for publication readiness
+            
+            Focus on:
+            - Error-free grammar and punctuation
+            - Clear, concise expression
+            - Logical structure and flow
+            - Professional presentation
+            """),
+    )
+
+    writing_team = Team(
+        name="Writing Team",
+        members=[research_agent, brainstorm_agent, writer_agent, editor_agent],
+        model=OpenAIChat(id="gpt-5-mini"),
+        instructions=dedent("""\
+            You are a collaborative writing team that excels at creating high-quality content!
+            
+            Team Process:
+            1. **Research Phase**: Gather comprehensive, current information
+            2. **Creative Phase**: Brainstorm unique angles and approaches  
+            3. **Writing Phase**: Create structured, engaging content
+            4. **Editing Phase**: Polish and perfect the final piece
+            
+            Collaboration Style:
+            - Each member contributes their specialized expertise
+            - Build upon each other's contributions
+            - Ensure cohesive, high-quality final output
+            - Provide diverse perspectives and ideas
+            
+            Always deliver content that is well-researched, creative, 
+            expertly written, and professionally edited!
+            """),
+        show_members_responses=True,
+        markdown=True,
+    )
+
+    if __name__ == "__main__":
+        print("💡 Tell us about your writing project and watch the team collaborate!")
+        print("✏️ Type 'exit', 'quit', or 'bye' to end our session.\n")
+
+        writing_team.cli_app(
+            input="Hello! We're excited to work on your writing project. What would you like us to help you create today? Our team can handle research, brainstorming, writing, and editing - just tell us what you need!",
+            user="Client",
+            emoji="👥",
+            stream=True,
+        )
+
+        ###########################################################################
+        # ASYNC CLI APP
+        ###########################################################################
+        # import asyncio
+
+        # asyncio.run(writing_team.acli_app(
+        #     input="Hello! We're excited to work on your writing project. What would you like us to help you create today? Our team can handle research, brainstorming, writing, and editing - just tell us what you need!",
+        #     user="Client",
+        #     emoji="👥",
+        #     stream=True,
+        # ))
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python run_as_cli.py
+    ```
+    
+    ```bash Windows
+    python run_as_cli.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/other" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>
+### FILE: ./usage/other/team-exponential-backoff.mdx ###
+
+---
+title: Team with Exponential Backoff
+sidebarTitle: Exponential Backoff
+description: This example demonstrates how to configure a team with exponential backoff retry logic.
+---
+
+When agents encounter errors or rate limits, the team will automatically retry with increasing delays between attempts.
+
+<Steps>
+
+  <Step title="Create a Python file">
+    ```bash
+    touch team_exponential_backoff.py
+    ```
+  </Step>
+
+  <Step title="Add the following code to your Python file">
+
+    ```python team_exponential_backoff.py
+    from agno.agent import Agent
+    from agno.team import Team
+    from agno.tools.duckduckgo import DuckDuckGoTools
+
+    # Create a research team
+    team = Team(
+        members=[
+            Agent(
+                name="Sarah",
+                role="Data Researcher",
+                tools=[DuckDuckGoTools()],
+                instructions="Focus on gathering and analyzing data",
+            ),
+            Agent(
+                name="Mike",
+                role="Technical Writer",
+                instructions="Create clear, concise summaries",
+            ),
+        ],
+        retries=3,
+        exponential_backoff=True,
+    )
+
+    team.print_response(
+        "Search for latest news about the latest AI models",
+        stream=True,
+    )
+    ```
+  </Step>
+
+  <Snippet file="create-venv-step.mdx" />
+
+  <Step title="Install libraries">
+    ```bash
+    pip install -U agno openai ddgs
+    ```
+  </Step>
+
+  <Step title="Export your OpenAI API key">
+
+    <CodeGroup>
+
+    ```bash Mac/Linux
+export OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+
+    ```bash Windows
+$Env:OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="Run Team">
+    <CodeGroup>
+    ```bash Mac
+    python team_exponential_backoff.py
+    ```
+    
+    ```bash Windows
+    python team_exponential_backoff.py
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Find All Cookbooks">
+  Explore all the available cookbooks in the Agno repository. Click the link below to view the code on GitHub:
+
+  <Link href="https://github.com/agno-agi/agno/tree/main/cookbook/04_teams/other" target="_blank">
+    Agno Cookbooks on GitHub
+  </Link>
+</Step>
+</Steps>

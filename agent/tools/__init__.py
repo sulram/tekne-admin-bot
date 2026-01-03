@@ -9,7 +9,7 @@ Functions without _tool suffix are simple functions for direct use (bot commands
 from .proposal import (
     save_proposal_yaml,
     load_proposal_yaml,
-    list_existing_proposals,  # Simple function
+    _list_proposals_impl as list_existing_proposals,  # Internal function exposed for bot
     update_proposal_field,
     get_proposal_structure,
     read_section_content,
@@ -22,6 +22,7 @@ from .git import commit_and_push_submodule
 # Agent tools (@tool decorated, for agent use)
 from .proposal import list_existing_proposals_tool
 from .pdf import generate_pdf_from_yaml_tool
+from .routing import identify_client_project, prepare_new_project_context
 
 __all__ = [
     # Proposal tools (simple functions)
@@ -47,4 +48,6 @@ __all__ = [
     # Agent tools (@tool decorated)
     'list_existing_proposals_tool',
     'generate_pdf_from_yaml_tool',
+    'identify_client_project',
+    'prepare_new_project_context',
 ]

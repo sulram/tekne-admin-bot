@@ -3,3 +3,7 @@
 	url = ../tekne-proposals.git
 	# Relative URL inherits parent repo's authentication in Dokploy
 	ignore = all
+[submodule "submodules/agno-docs"]
+	path = submodules/agno-docs
+	url = https://github.com/agno-agi/agno-docs.git
+	ignore = all

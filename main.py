@@ -32,8 +32,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Suppress httpx INFO logs to avoid flooding
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Suppress verbose third-party logs
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Hide HTTP requests
+logging.getLogger("httpcore").setLevel(logging.WARNING)  # Hide HTTP details
+logging.getLogger("anthropic").setLevel(logging.WARNING)  # Hide Anthropic SDK logs
+
+# Keep agent logs visible for debugging delegation and tool execution
+logging.getLogger("agent.team").setLevel(logging.INFO)  # Team delegation and coordination
+logging.getLogger("agent.tools").setLevel(logging.INFO)  # Tool execution details
 
 # Log access control configuration
 if ALLOWED_USERS:

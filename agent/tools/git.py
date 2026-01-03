@@ -18,16 +18,23 @@ def commit_and_push_submodule(message: str) -> str:
     """
     Commit and push ALL changes in the tekne-proposals submodule.
 
+    **CRITICAL WORKFLOW: ALWAYS call this after save_proposal_yaml + generate_pdf_from_yaml**
+
     This will add all modified files (YAMLs and images) to git, commit, and push.
 
+    Standard sequence:
+    1. save_proposal_yaml(...) → returns yaml_path
+    2. generate_pdf_from_yaml(yaml_path) → generates PDF
+    3. commit_and_push_submodule("Update proposal for Client X") → syncs to repo
+
+    **EXCEPTION: Do NOT call if user only asked to regenerate PDF without changes**
+    (e.g., "gere o pdf da 2", "regenerate PDF") - git may not be available in production
+
     Args:
-        message (str): Commit message (e.g., "Update proposal for Client X")
+        message (str): Clear commit message describing the change
 
     Returns:
-        str: Result of git operations
-
-    Example:
-        commit_and_push_submodule("Update SESC proposal")
+        str: Result of git operations (or warning if git unavailable)
     """
     original_dir = os.getcwd()
 

@@ -99,12 +99,18 @@ generate_pdf_from_yaml = _generate_pdf_impl
 @tool
 def generate_pdf_from_yaml_tool(yaml_file_path: str) -> str:
     """
-    Generate PDF from YAML using the proposal script (Agent tool wrapper)
+    Generate PDF from YAML using the proposal script.
+
+    **When to use:**
+    - After creating/editing a proposal (save_proposal_yaml → THIS → commit_and_push_submodule)
+    - When user explicitly asks to regenerate PDF
+
+    **Note:** PDF is automatically sent to user via Telegram - don't include path in your response.
 
     Args:
-        yaml_file_path: Relative path to YAML file from submodule root
+        yaml_file_path: Relative path to YAML file from submodule root (e.g., "docs/2026-01-client/proposta-x.yml")
 
     Returns:
-        Path to generated PDF file
+        Success message with PDF path (for logging only - user already receives the file)
     """
     return _generate_pdf_impl(yaml_file_path)

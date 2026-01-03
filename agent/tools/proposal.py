@@ -126,13 +126,25 @@ def save_proposal_yaml(
 @tool
 def load_proposal_yaml(yaml_file_path: str) -> str:
     """
-    Load existing proposal YAML for editing
+    Load FULL proposal YAML (EXPENSIVE - avoid if possible!)
+
+    **WARNING: This uses 10-20x more tokens than get_proposal_structure + read_section_content**
+
+    ONLY use when:
+    - User explicitly asks to see entire proposal
+    - Major restructuring (adding/removing sections, reordering)
+    - You need to understand cross-section relationships
+
+    For typical edits (change title, update section, fix typo):
+    1. Use get_proposal_structure() to find section index
+    2. Use read_section_content(index) if you need context
+    3. Use update_proposal_field() to make the change
 
     Args:
         yaml_file_path: Relative path to YAML file from submodule root
 
     Returns:
-        YAML content as string
+        Full YAML content as string (~5000-10000 tokens)
     """
     yaml_full_path = SUBMODULE_PATH / yaml_file_path
 
@@ -289,17 +301,23 @@ def get_proposal_structure(yaml_file_path: str) -> str:
     """
     Get ONLY the structure/outline of a proposal without loading full content.
 
-    This is much more efficient than load_proposal_yaml() when you just need to:
-    - Navigate sections ("which section has the budget?")
+    **CRITICAL: Use this FIRST for ANY proposal edit request** (saves 90%+ tokens vs load_proposal_yaml)
+
+    This shows section indices (for read_section_content/update_proposal_field) without wasting tokens.
+
+    Use when you need to:
+    - Navigate sections ("which section has the budget?") → Returns section indices
+    - Locate content for editing → Get index, then use read_section_content() or update_proposal_field()
     - Count elements ("how many bullets in section 2?")
-    - See section titles
-    - Understand proposal organization
+    - See section titles and basic metadata
+
+    DO NOT use load_proposal_yaml() unless user explicitly asks to see entire proposal.
 
     Args:
         yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
 
     Returns:
-        Compact outline with meta info and section structure
+        Compact outline with section indices [0], [1], etc. for navigation
     """
     yaml_full_path = SUBMODULE_PATH / yaml_file_path
 

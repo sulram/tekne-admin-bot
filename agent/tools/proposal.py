@@ -116,6 +116,21 @@ def save_proposal_yaml(
     # Save YAML
     file_path.write_text(yaml_content, encoding="utf-8")
 
+    # Validate YAML integrity immediately after save
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            yaml.safe_load(f)  # Validate syntax (doesn't return content)
+        logger.info(f"✅ YAML validation passed")
+    except yaml.YAMLError as e:
+        logger.error(f"❌ YAML validation failed: {e}")
+        # Delete invalid file to prevent broken state
+        file_path.unlink()
+        return f"❌ Error: Generated YAML is invalid: {str(e)[:200]}"
+    except Exception as e:
+        logger.error(f"❌ Validation error: {e}")
+        file_path.unlink()
+        return f"❌ Error validating YAML: {str(e)[:200]}"
+
     relative_path = str(file_path.relative_to(SUBMODULE_PATH))
     logger.info(f"✅ Created proposal YAML: {relative_path}")
     send_status("📝 Criei o arquivo da proposta!")
@@ -129,16 +144,23 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
     Load FULL proposal YAML (EXPENSIVE - avoid if possible!)
 
     **WARNING: This uses 10-20x more tokens than get_proposal_structure + read_section_content**
+    ❌ **DO NOT use this to "verify" after update_proposal_field() - it's wasteful!**
 
     ONLY use when:
     - User explicitly asks to see entire proposal
     - Major restructuring (adding/removing sections, reordering)
     - You need to understand cross-section relationships
 
+    ❌ **DO NOT USE TO VERIFY EDITS:**
+    - After update_proposal_field() → Trust the ✅ confirmation!
+    - To check if edit worked → It worked. Don't waste tokens.
+    - To see new content → You already set it with new_value!
+
     For typical edits (change title, update section, fix typo):
     1. Use get_proposal_structure() to find section index
     2. Use read_section_content(index) if you need context
-    3. Use update_proposal_field() to make the change
+    3. Use update_proposal_field() to make the change (handles load/save internally)
+    4. ❌ DO NOT call load_proposal_yaml() afterwards!
 
     Args:
         yaml_file_path: Relative path to YAML file from submodule root
@@ -174,8 +196,18 @@ def update_proposal_field(
     """
     Update a specific field in a proposal YAML without rewriting the entire file.
 
+    ⚠️  **CRITICAL: This tool loads the YAML INTERNALLY, edits it, and saves it.**
+    ❌ **DO NOT call load_proposal_yaml() before or after this tool!**
+    ✅ **You get a confirmation - trust it. No need to verify by loading YAML.**
+
     This is ideal for granular edits like fixing typos, updating a section title,
     or modifying specific bullet points.
+
+    Workflow:
+    1. Call update_proposal_field() → file is edited and saved internally
+    2. You receive: "✅ Updated 'sections[8].content'"
+    3. Generate PDF and commit
+    4. ❌ DO NOT load YAML to "verify" the change
 
     Args:
         yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
@@ -193,7 +225,7 @@ def update_proposal_field(
         - "sections[0].image" → Update section image path
 
     Returns:
-        Success message or error
+        Success message (NOT the full YAML!)
     """
     yaml_full_path = SUBMODULE_PATH / yaml_file_path
 
@@ -273,8 +305,22 @@ def update_proposal_field(
         with open(yaml_full_path, 'w', encoding='utf-8') as f:
             ryaml.dump(data, f)
 
-        # Return minimal confirmation (don't send YAML back to agent)
-        response_msg = f"✅ Updated '{field_path}'"
+        # Validate YAML integrity immediately after save
+        validation_msg = ""
+        try:
+            with open(yaml_full_path, 'r', encoding='utf-8') as f:
+                yaml.safe_load(f)  # Validate syntax (doesn't return content)
+            validation_msg = " | ✅ YAML válido"
+            logger.info(f"✅ YAML validation passed")
+        except yaml.YAMLError as e:
+            validation_msg = f" | ⚠️ YAML inválido: {str(e)[:100]}"
+            logger.error(f"❌ YAML validation failed: {e}")
+        except Exception as e:
+            validation_msg = f" | ⚠️ Erro validação: {str(e)[:100]}"
+            logger.error(f"❌ Validation error: {e}")
+
+        # Return minimal confirmation with validation status
+        response_msg = f"✅ Updated '{field_path}'{validation_msg}"
 
         logger.info(f"✅ Successfully updated field in YAML:")
         logger.info(f"   Path: {field_path}")

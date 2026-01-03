@@ -101,9 +101,18 @@ def generate_pdf_from_yaml_tool(yaml_file_path: str) -> str:
     """
     Generate PDF from YAML using the proposal script.
 
+    **CRITICAL: ALWAYS ask user for confirmation before calling this tool!**
+
     **When to use:**
-    - After creating/editing a proposal (save_proposal_yaml → THIS → commit_and_push_submodule)
-    - When user explicitly asks to regenerate PDF
+    - ONLY after user confirms they want the PDF (ask: "Quer que eu gere o PDF agora?")
+    - When user explicitly asks to regenerate/create PDF
+
+    **Workflow:**
+    1. Save/edit YAML
+    2. Ask: "Quer que eu gere o PDF agora?"
+    3. Wait for user confirmation (yes/no)
+    4. If yes → call this tool → then commit_and_push_submodule
+    5. If no → just commit_and_push_submodule (skip PDF generation)
 
     **Note:** PDF is automatically sent to user via Telegram - don't include path in your response.
 

@@ -69,8 +69,9 @@ def load_claude_instructions() -> str:
 ## BOT WORKFLOW RULES
 
 **After ANY proposal edit/creation:**
-1. Save YAML → Generate PDF → Commit (in that order, always)
+1. Save YAML → Ask user if they want PDF generated → Generate PDF (only if user confirms) → Commit (in that order)
 2. Commit message should describe the change clearly
+3. **CRITICAL:** Always ask "Quer que eu gere o PDF agora?" after YAML edits - NEVER auto-generate PDF
 
 **Token optimization (critical):**
 - Start with `get_proposal_structure()` to navigate

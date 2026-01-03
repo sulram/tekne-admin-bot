@@ -54,3 +54,6 @@ data/*.db
 # Git temporary files
 *.diff
 *.patch
+
+# Generated/temporary files
+concatenated.txt

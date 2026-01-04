@@ -191,7 +191,7 @@ def load_proposal_yaml(yaml_file_path: str) -> str:
 def update_proposal_field(
     yaml_file_path: str,
     field_path: str,
-    new_value: str | list | dict
+    new_value: str | list | dict | None
 ) -> str:
     """
     Update a specific field in a proposal YAML without rewriting the entire file.
@@ -212,7 +212,7 @@ def update_proposal_field(
     Args:
         yaml_file_path: Relative path to YAML file (e.g., "docs/2026-01-client/proposta-x.yml")
         field_path: Dot notation path to field (examples below)
-        new_value: New value for the field (string, list, or dict)
+        new_value: New value for the field (string, list, dict, or None to remove field)
 
     Field path examples:
         - "meta.title" → Update proposal title
@@ -223,6 +223,7 @@ def update_proposal_field(
         - "sections[0].bullets" → Update entire bullets list
         - "sections[0].bullets[2]" → Update third bullet point
         - "sections[0].image" → Update section image path
+        - "sections[0].image" with new_value=None → Remove image field entirely
 
     Returns:
         Success message (NOT the full YAML!)
@@ -295,11 +296,24 @@ def update_proposal_field(
                 return f"Error: Expected list for index access"
             if final_key >= len(target):
                 return f"Error: Index {final_key} out of range"
-            target[final_key] = new_value
+
+            if new_value is None:
+                # Remove item from list
+                del target[final_key]
+            else:
+                target[final_key] = new_value
         else:
             if not isinstance(target, dict):
                 return f"Error: Expected dict for key access"
-            target[final_key] = new_value
+
+            if new_value is None:
+                # Remove field from dict
+                if final_key in target:
+                    del target[final_key]
+                else:
+                    return f"Error: Field '{final_key}' not found (cannot remove non-existent field)"
+            else:
+                target[final_key] = new_value
 
         # Save back to file using ruamel.yaml (preserves formatting/comments)
         with open(yaml_full_path, 'w', encoding='utf-8') as f:
@@ -329,11 +343,14 @@ def update_proposal_field(
 
         # Create user-friendly status message with preview of new value
         field_name = field_path.split('.')[-1].split('[')[0]  # Extract readable field name
-        value_preview = str(new_value)[:100]  # Truncate long values
-        if len(str(new_value)) > 100:
-            value_preview += "..."
 
-        send_status(f"✅ {field_name.capitalize()} atualizado: \"{value_preview}\"")
+        if new_value is None:
+            send_status(f"✅ {field_name.capitalize()} removido do YAML")
+        else:
+            value_preview = str(new_value)[:100]  # Truncate long values
+            if len(str(new_value)) > 100:
+                value_preview += "..."
+            send_status(f"✅ {field_name.capitalize()} atualizado: \"{value_preview}\"")
 
         return response_msg
 

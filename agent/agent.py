@@ -29,6 +29,7 @@ from agent.tools import (
     add_user_image_to_yaml,
     commit_and_push_submodule,
 )
+from agent.dynamic_model import should_use_haiku
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +69,16 @@ def load_claude_instructions() -> str:
 
 ## BOT WORKFLOW RULES
 
-**After ANY proposal edit/creation:**
-1. Save YAML → Ask user if they want PDF generated → Generate PDF (only if user confirms) → Commit (in that order)
-2. Commit message should describe the change clearly
-3. **CRITICAL:** Always ask "Quer que eu gere o PDF agora?" after YAML edits - NEVER auto-generate PDF
+**After ANY proposal edit/creation (MANDATORY SEQUENCE):**
+1. Save YAML with `save_proposal_yaml()` or `update_proposal_field()`
+2. **IMMEDIATELY commit** with `commit_and_push_submodule()` (clear commit message)
+3. Ask "Quer que eu gere o PDF agora?"
+4. Only generate PDF if user confirms
+
+**CRITICAL RULES:**
+- ✅ ALWAYS commit after YAML changes (step 2 above)
+- ❌ NEVER auto-generate PDF (always ask first)
+- ❌ NEVER skip commit after YAML edits
 
 **Token optimization (critical):**
 - Start with `get_proposal_structure()` to navigate
@@ -82,17 +89,18 @@ def load_claude_instructions() -> str:
 **PDF regeneration without edits:**
 - If user just wants PDF regenerated → call `generate_pdf_from_yaml()` directly
 - Do NOT load/update YAML unnecessarily
-- Do NOT commit (git may not be available in production)
+- Commit only if YAML was modified
 
 **Response style:**
 - Concise (2-3 lines max)
+- Complete when listing files or showing content of section
 - Past tense: "Editei a proposta" not "Vou editar"
 - Telegram markdown: *bold*, _italic_, `code`
 - Bot sends PDF automatically - don't include path in response
 """
 
     # Cache the instructions for future use
-    _cached_instructions = base_instructions + bot_instructions
+    _cached_instructions =  bot_instructions + base_instructions
 
     logger.info(f"Total cached instructions: {len(_cached_instructions)} chars (~{len(_cached_instructions)//4} tokens)")
 
@@ -114,40 +122,66 @@ def get_agent_db():
         return InMemoryDb()
 
 
-# Create the agent
-proposal_agent = Agent(
-    name="Tekne Proposal Generator",
+# Shared configuration for both agents
+_agent_tools = [
+    save_proposal_yaml,
+    update_proposal_field,
+    get_proposal_structure,
+    read_section_content,
+    delete_proposal,
+    generate_pdf_from_yaml_tool,  # Agent uses @tool decorated version
+    generate_image_dalle,
+    wait_for_user_image,
+    add_user_image_to_yaml,
+    commit_and_push_submodule,
+    list_existing_proposals_tool,  # Agent uses @tool decorated version
+    load_proposal_yaml,
+]
+
+# Shared DB instance (both agents use same DB for history continuity)
+_shared_agent_db = get_agent_db()
+
+# Haiku agent (fast, cheap) - for simple operations
+haiku_agent = Agent(
+    name="Tekne Proposal Generator (Haiku)",
     model=Claude(
-        id="claude-sonnet-4-5",  # Sonnet 4.5 for better accuracy
-        cache_system_prompt=True,  # Enable prompt caching for system instructions
-        betas=["extended-cache-ttl-2025-04-11"],  # Extended cache TTL (1 hour)
-        extended_cache_time=True,  # Use 1-hour cache instead of 5-min
+        id="claude-3-5-haiku-20241022",  # Haiku 3.5 (fast, cheap)
+        cache_system_prompt=True,
+        betas=["extended-cache-ttl-2025-04-11"],
+        extended_cache_time=True,
     ),
-    db=get_agent_db(),  # Redis for persistence, InMemory as fallback
+    db=_shared_agent_db,  # Shared DB for conversation history
     instructions=load_claude_instructions(),
-    tools=[
-        save_proposal_yaml,
-        update_proposal_field,
-        get_proposal_structure,
-        read_section_content,
-        delete_proposal,
-        generate_pdf_from_yaml_tool,  # Agent uses @tool decorated version
-        generate_image_dalle,
-        wait_for_user_image,
-        add_user_image_to_yaml,
-        commit_and_push_submodule,
-        list_existing_proposals_tool,  # Agent uses @tool decorated version
-        load_proposal_yaml,
-    ],
+    tools=_agent_tools,
     add_history_to_context=True,
-    num_history_runs=5,  # Only keep last 5 runs to save tokens
-    markdown=False,  # Disable markdown - Telegram uses different format
+    num_history_runs=5,
+    markdown=False,
 )
+
+# Sonnet agent (powerful, expensive) - for complex operations
+sonnet_agent = Agent(
+    name="Tekne Proposal Generator (Sonnet)",
+    model=Claude(
+        id="claude-sonnet-4-5",  # Sonnet 4.5 (powerful, expensive)
+        cache_system_prompt=True,
+        betas=["extended-cache-ttl-2025-04-11"],
+        extended_cache_time=True,
+    ),
+    db=_shared_agent_db,  # Shared DB for conversation history
+    instructions=load_claude_instructions(),
+    tools=_agent_tools,
+    add_history_to_context=True,
+    num_history_runs=5,
+    markdown=False,
+)
+
+# Legacy alias (for backward compatibility)
+proposal_agent = sonnet_agent
 
 
 def get_agent_response(message: str, session_id: str = "default") -> str:
     """
-    Get response from proposal agent
+    Get response from proposal agent (dynamically chooses Haiku or Sonnet)
 
     Args:
         message: User message
@@ -158,13 +192,20 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
     """
     logger.info(f"[Session {session_id}] User message: {message[:100]}...")
 
+    # Decide which agent to use based on message heuristics
+    use_haiku = should_use_haiku(message)
+    selected_agent = haiku_agent if use_haiku else sonnet_agent
+    model_name = "Haiku 3.5" if use_haiku else "Sonnet 4.5"
+
+    logger.info(f"🤖 Selected model: {model_name}")
+
     # Bind session to current thread (for ThreadLocal callback routing)
     set_current_session(session_id)
 
     try:
         # Time the API call
         start_time = time.time()
-        response = proposal_agent.run(message, session_id=session_id, stream=False)
+        response = selected_agent.run(message, session_id=session_id, stream=False)
         elapsed_time = time.time() - start_time
     finally:
         # Clear session binding
@@ -187,23 +228,44 @@ def get_agent_response(message: str, session_id: str = "default") -> str:
 
         total_tokens = input_tokens + output_tokens
 
-        # Claude Sonnet 4.5 pricing
+        # Model-specific pricing
+        if use_haiku:
+            # Haiku 3.5 pricing (as of Dec 2024)
+            input_price = 0.80   # USD per 1M tokens
+            output_price = 4.00  # USD per 1M tokens
+        else:
+            # Sonnet 4.5 pricing
+            input_price = CLAUDE_INPUT_PRICE_PER_1M   # 3.00
+            output_price = CLAUDE_OUTPUT_PRICE_PER_1M  # 15.00
+
         # Base input tokens (not cached)
-        base_input_cost = (input_tokens / 1_000_000) * CLAUDE_INPUT_PRICE_PER_1M
+        base_input_cost = (input_tokens / 1_000_000) * input_price
         # Cache creation (1-hour TTL = 2x base price)
-        cache_write_cost = (cache_creation_tokens / 1_000_000) * (CLAUDE_INPUT_PRICE_PER_1M * 2.0)
+        cache_write_cost = (cache_creation_tokens / 1_000_000) * (input_price * 2.0)
         # Cache reads (0.1x base price - 90% savings!)
-        cache_read_cost = (cache_read_tokens / 1_000_000) * (CLAUDE_INPUT_PRICE_PER_1M * 0.1)
+        cache_read_cost = (cache_read_tokens / 1_000_000) * (input_price * 0.1)
         # Output tokens (no cache)
-        output_cost = (output_tokens / 1_000_000) * CLAUDE_OUTPUT_PRICE_PER_1M
+        output_cost = (output_tokens / 1_000_000) * output_price
 
         total_cost = base_input_cost + cache_write_cost + cache_read_cost + output_cost
 
-        # Log token breakdown
-        logger.info(f"💰 Token usage: {input_tokens:,} in + {output_tokens:,} out = {total_tokens:,} total")
+        # Calculate potential Sonnet cost (for savings comparison)
+        if use_haiku:
+            # What would this have cost with Sonnet?
+            sonnet_cost = ((input_tokens + cache_creation_tokens) / 1_000_000 * CLAUDE_INPUT_PRICE_PER_1M +
+                          (cache_read_tokens / 1_000_000) * (CLAUDE_INPUT_PRICE_PER_1M * 0.1) +
+                          (output_tokens / 1_000_000) * CLAUDE_OUTPUT_PRICE_PER_1M)
+            model_savings = sonnet_cost - total_cost
+            savings_pct = (model_savings / sonnet_cost * 100) if sonnet_cost > 0 else 0
+
+            logger.info(f"💰 Token usage ({model_name}): {input_tokens:,} in + {output_tokens:,} out = {total_tokens:,} total")
+            logger.info(f"💚 Model savings: ${model_savings:.4f} (vs Sonnet) = {savings_pct:.1f}% cheaper")
+        else:
+            logger.info(f"💰 Token usage ({model_name}): {input_tokens:,} in + {output_tokens:,} out = {total_tokens:,} total")
+
         if cache_read_tokens > 0 or cache_creation_tokens > 0:
             logger.info(f"🔄 Cache: {cache_read_tokens:,} read (90% savings!) + {cache_creation_tokens:,} write")
-            cache_savings = (cache_read_tokens / 1_000_000) * CLAUDE_INPUT_PRICE_PER_1M * 0.9
+            cache_savings = (cache_read_tokens / 1_000_000) * input_price * 0.9
             logger.info(f"💚 Cache savings: ${cache_savings:.4f} (vs non-cached)")
 
         logger.info(f"💵 Cost: ${base_input_cost:.4f} base + ${cache_write_cost:.4f} write + ${cache_read_cost:.4f} read + ${output_cost:.4f} out = ${total_cost:.4f} total")

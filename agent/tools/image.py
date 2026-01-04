@@ -14,6 +14,58 @@ from core.callbacks import send_status, update_session_state
 logger = logging.getLogger(__name__)
 
 
+def _add_image_to_yaml_file(
+    yaml_file_path: str,
+    image_filename: str,
+    position: str = "before_first_section"
+) -> None:
+    """
+    Internal helper: Add image to YAML file at specified position
+
+    Args:
+        yaml_file_path: Full path to YAML file
+        image_filename: Just the filename (e.g., "image.png")
+        position: Where to add the image
+
+    Raises:
+        Exception if YAML operation fails
+    """
+    from ruamel.yaml import YAML
+
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+    ryaml.default_flow_style = False
+
+    with open(yaml_file_path, 'r', encoding='utf-8') as f:
+        data = ryaml.load(f)
+
+    # Add image based on position
+    if position == "before_first_section":
+        if "sections" in data and len(data["sections"]) > 0:
+            data["sections"][0]["image_before"] = image_filename
+            logger.info(f"Added image_before to first section: {image_filename}")
+
+    elif position.startswith("section_") and position.endswith("_before"):
+        section_idx = int(position.split("_")[1])
+        if "sections" in data and len(data["sections"]) > section_idx:
+            data["sections"][section_idx]["image_before"] = image_filename
+            logger.info(f"Added image_before to section {section_idx}: {image_filename}")
+
+    elif position.startswith("section_"):
+        section_idx = int(position.split("_")[1])
+        if "sections" in data and len(data["sections"]) > section_idx:
+            data["sections"][section_idx]["image"] = image_filename
+            logger.info(f"Added image to section {section_idx}: {image_filename}")
+
+    # Save YAML
+    with open(yaml_file_path, 'w', encoding='utf-8') as f:
+        ryaml.dump(data, f)
+
+    # Validate YAML
+    with open(yaml_file_path, 'r', encoding='utf-8') as f:
+        yaml.safe_load(f)
+
+
 @tool
 def generate_image_dalle(
     prompt: str,
@@ -21,7 +73,12 @@ def generate_image_dalle(
     yaml_file_path: str
 ) -> str:
     """
-    Generate image using DALL-E 3 and save to proposal directory
+    Generate image using DALL-E 3, save it, and automatically add to proposal YAML
+
+    This tool does THREE things automatically:
+    1. Sends prompt to user BEFORE generating (so they see it while waiting)
+    2. Generates and saves the image
+    3. Adds image to YAML as 'image_before' in first section (default position)
 
     Args:
         prompt: Description for image generation
@@ -29,10 +86,14 @@ def generate_image_dalle(
         yaml_file_path: Path to YAML file to save image in same directory
 
     Returns:
-        Relative path to generated image
+        Success message with image path
     """
     from openai import OpenAI
     import requests
+
+    # Send prompt to user BEFORE generating (so they see it while waiting)
+    send_status(f"🎨 Gerando imagem com o prompt:\n\n\"{prompt}\"\n\n⏳ Aguarde...")
+    logger.info(f"🎨 Generating image with prompt: {prompt[:100]}...")
 
     client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -58,13 +119,24 @@ def generate_image_dalle(
     with open(img_path, "wb") as f:
         f.write(img_data)
 
-    relative_path = str(img_path.relative_to(SUBMODULE_PATH))
+    # Get just the filename (not full path) for YAML reference
+    image_filename = f"{filename}.png"
 
-    # Send status with image path so it can be sent to user
-    send_status(f"✅ Imagem gerada! Caminho: {relative_path}")
-    logger.info(f"✅ DALL-E image generated: {relative_path}")
+    # Automatically add image to YAML using helper function (DRY!)
+    try:
+        _add_image_to_yaml_file(
+            yaml_file_path=str(yaml_full_path),
+            image_filename=image_filename,
+            position="before_first_section"
+        )
+        send_status(f"✅ Imagem gerada e adicionada ao YAML! ({image_filename})")
+        logger.info(f"✅ Image added to YAML: {image_filename}")
+        return f"✅ Imagem gerada: {image_filename} (adicionada como image_before na primeira seção)"
 
-    return relative_path
+    except Exception as e:
+        logger.error(f"❌ Error adding image to YAML: {e}")
+        send_status(f"✅ Imagem gerada! ({image_filename})")
+        return f"✅ Imagem gerada: {image_filename} (erro ao adicionar ao YAML: {str(e)})"
 
 
 @tool

@@ -96,9 +96,29 @@ bot/               # Telegram handlers
 agent/             # Agno AI agent + tools
   tools/           # Proposal, PDF, Git, Image tools
 core/              # Cost tracking, Redis, callbacks
+tests/             # Test suite
+  agent/           # Agent behavior tests
+  tools/           # Tool functionality tests
 config.py          # Settings
 main.py            # Entry point
 ```
+
+## Testing
+
+Run tests with:
+
+```bash
+# All tests
+./run_tests.sh
+
+# Agent tests only (model selection, etc)
+./run_tests.sh agent
+
+# Tools tests only (YAML, PDF, etc)
+./run_tests.sh tools
+```
+
+See [tests/README.md](tests/README.md) for details.
 
 ### Submodule: tekne-proposals
 
